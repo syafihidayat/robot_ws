@@ -1,0 +1,1 @@
+Invoking command in '/home/syafihidayat/Documents/robot_ws/src/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake /home/syafihidayat/Documents/robot_ws/src/robotRos_pkg -DCMAKE_INSTALL_PREFIX=/home/syafihidayat/Documents/robot_ws/src/install/robotRos_pkg

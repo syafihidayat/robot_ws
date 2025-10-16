@@ -1,0 +1,26 @@
+[0.029s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16
+[0.094s] [35m[1mConsolidate compiler generated dependencies of target robotRos_node[0m
+[0.123s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o[0m
+[10.837s] [100%] [32m[1mLinking CXX executable robotRos_node[0m
+[11.719s] [100%] Built target robotRos_node
+[11.733s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16
+[11.734s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg
+[11.742s] -- Install configuration: ""
+[11.742s] -- Installing: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/lib/robotRos_pkg/robotRos_node
+[11.752s] -- Set runtime path of "/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/lib/robotRos_pkg/robotRos_node" to ""
+[11.752s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/ament_index/resource_index/package_run_dependencies/robotRos_pkg
+[11.752s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/ament_index/resource_index/parent_prefix_path/robotRos_pkg
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/ament_prefix_path.sh
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/ament_prefix_path.dsv
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/path.sh
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/path.dsv
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.bash
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.sh
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.zsh
+[11.753s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.dsv
+[11.754s] -- Installing: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/package.dsv
+[11.754s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/ament_index/resource_index/packages/robotRos_pkg
+[11.754s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/cmake/robotRos_pkgConfig.cmake
+[11.754s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/cmake/robotRos_pkgConfig-version.cmake
+[11.754s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/package.xml
+[11.755s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg

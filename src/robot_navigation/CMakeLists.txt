@@ -24,7 +24,7 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  DIRECTORY launch config rviz maps
+  DIRECTORY launch rviz 
   DESTINATION share/${PROJECT_NAME} 
 )
 

@@ -1,0 +1,10 @@
+[0.027s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16
+[0.102s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o[0m
+[0.358s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:2:10:[m[K [01;31m[Kfatal error: [m[Knav_msgs/msg/odometry.hpp: No such file or directory
+[0.358s]     2 | #include [01;31m[K<nav_msgs/msg/odometry.hpp>[m[K
+[0.358s]       |          [01;31m[K^~~~~~~~~~~~~~~~~~~~~~~~~~~[m[K
+[0.358s] compilation terminated.
+[0.368s] gmake[2]: *** [CMakeFiles/robotRos_sendP.dir/build.make:76: CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o] Error 1
+[0.368s] gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_sendP.dir/all] Error 2
+[0.369s] gmake: *** [Makefile:146: all] Error 2
+[0.382s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose' returned '2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16

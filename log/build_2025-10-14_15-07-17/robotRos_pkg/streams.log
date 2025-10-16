@@ -1,0 +1,50 @@
+[0.023s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake /home/syafihidayat/Documents/robot_ws/src/robotRos_pkg -DCMAKE_INSTALL_PREFIX=/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg
+[0.108s] -- The C compiler identification is GNU 11.4.0
+[0.194s] -- The CXX compiler identification is GNU 11.4.0
+[0.204s] -- Detecting C compiler ABI info
+[0.305s] -- Detecting C compiler ABI info - done
+[0.311s] -- Check for working C compiler: /usr/bin/cc - skipped
+[0.311s] -- Detecting C compile features
+[0.312s] -- Detecting C compile features - done
+[0.315s] -- Detecting CXX compiler ABI info
+[0.413s] -- Detecting CXX compiler ABI info - done
+[0.419s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.419s] -- Detecting CXX compile features
+[0.420s] -- Detecting CXX compile features - done
+[0.422s] -- Found ament_cmake: 1.3.12 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.578s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter 
+[0.680s] -- Found geometry_msgs: 4.9.0 (/opt/ros/humble/share/geometry_msgs/cmake)
+[0.726s] -- Found rosidl_generator_c: 3.1.7 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.732s] -- Found rosidl_adapter: 3.1.7 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.740s] -- Found rosidl_generator_cpp: 3.1.7 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.753s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.769s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.805s] -- Found rclcpp: 16.0.15 (/opt/ros/humble/share/rclcpp/cmake)
+[0.845s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.848s] -- Found rmw_fastrtps_cpp: 6.2.8 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[0.966s] -- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.2")  
+[0.995s] -- Found FastRTPS: /opt/ros/humble/include  
+[1.041s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[1.050s] -- Looking for pthread.h
+[1.139s] -- Looking for pthread.h - found
+[1.139s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+[1.224s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+[1.225s] -- Found Threads: TRUE  
+[1.260s] -- Found nav_msgs: 4.9.0 (/opt/ros/humble/share/nav_msgs/cmake)
+[1.276s] -- Found ament_lint_auto: 0.12.14 (/opt/ros/humble/share/ament_lint_auto/cmake)
+[1.320s] WARNING: Package name "robotRos_pkg" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+[1.352s] -- Added test 'cppcheck' to perform static code analysis on C / C++ code
+[1.352s] -- Configured cppcheck include dirs: $<BUILD_INTERFACE:/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/include>
+[1.353s] -- Configured cppcheck exclude dirs and/or files: 
+[1.353s] -- Added test 'lint_cmake' to check CMake code style
+[1.354s] -- Added test 'uncrustify' to check C / C++ code style
+[1.354s] -- Configured uncrustify additional arguments: 
+[1.354s] -- Added test 'xmllint' to check XML markup files
+[1.355s] -- Configuring done
+[1.364s] -- Generating done
+[1.368s] -- Build files have been written to: /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg
+[1.379s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake /home/syafihidayat/Documents/robot_ws/src/robotRos_pkg -DCMAKE_INSTALL_PREFIX=/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg
+[1.382s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16
+[1.441s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o[0m
+[8.626s] [100%] [32m[1mLinking CXX executable robotRos_node[0m
+[9.120s] [100%] Built target robotRos_node

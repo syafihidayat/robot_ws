@@ -1,0 +1,31 @@
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In constructor ‘[01m[KMovement::Movement()[m[K’:
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:27:45:[m[K [01;31m[Kerror: [m[Kno matching function for call to ‘[01m[KMovement::create_subscription(std::chrono::milliseconds, std::_Bind_helper<false, void (Movement::*)(), Movement*>::type)[m[K’
+   27 |     visual_timer = [01;31m[Kthis->create_subscription(std::chrono::milliseconds(200),std::bind(&Movement::showVisualLine, this))[m[K;
+      |                    [01;31m[K~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[m[K
+In file included from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/node.hpp:1321[m[K,
+                 from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/executors/single_threaded_executor.hpp:28[m[K,
+                 from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/executors.hpp:22[m[K,
+                 from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/rclcpp.hpp:155[m[K,
+                 from [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:1[m[K:
+[01m[K/opt/ros/humble/include/rclcpp/rclcpp/node_impl.hpp:92:1:[m[K [01;36m[Knote: [m[Kcandidate: ‘[01m[Ktemplate<class MessageT, class CallbackT, class AllocatorT, class SubscriptionT, class MessageMemoryStrategyT> std::shared_ptr<ROSMessageT> rclcpp::Node::create_subscription(const string&, const rclcpp::QoS&, CallbackT&&, const rclcpp::SubscriptionOptionsWithAllocator<AllocatorT>&, typename MessageMemoryStrategyT::SharedPtr)[m[K’
+   92 | [01;36m[KNode[m[K::create_subscription(
+      | [01;36m[K^~~~[m[K
+[01m[K/opt/ros/humble/include/rclcpp/rclcpp/node_impl.hpp:92:1:[m[K [01;36m[Knote: [m[K  template argument deduction/substitution failed:
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:27:45:[m[K [01;36m[Knote: [m[K  candidate expects 5 arguments, 2 provided
+   27 |     visual_timer = [01;36m[Kthis->create_subscription(std::chrono::milliseconds(200),std::bind(&Movement::showVisualLine, this))[m[K;
+      |                    [01;36m[K~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[m[K
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::odom_callback(nav_msgs::msg::Odometry_<std::allocator<void> >::SharedPtr)[m[K’:
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:65:19:[m[K [01;31m[Kerror: [m[K‘[01m[Kusing Point = struct geometry_msgs::msg::Point_<std::allocator<void> >[m[K’ {aka ‘[01m[Kstruct geometry_msgs::msg::Point_<std::allocator<void> >[m[K’} has no member named ‘[01m[KY[m[K’
+   65 |       start_point.[01;31m[KY[m[K = startY;
+      |                   [01;31m[K^[m[K
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::pose_callback(geometry_msgs::msg::Point_<std::allocator<void> >::SharedPtr)[m[K’:
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:105:7:[m[K [01;31m[Kerror: [m[K‘[01m[Kmarker[m[K’ was not declared in this scope
+  105 |       [01;31m[Kmarker[m[K->points.push_back(current_point);
+      |       [01;31m[K^~~~~~[m[K
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::showVisualLine()[m[K’:
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:143:12:[m[K [01;31m[Kerror: [m[K‘[01m[Kclass std::shared_ptr<visualization_msgs::msg::Marker_<std::allocator<void> > >[m[K’ has no member named ‘[01m[Klifetime[m[K’
+  143 |     marker.[01;31m[Klifetime[m[K = rclcpp::Duration::from_nanoseconds(200);
+      |            [01;31m[K^~~~~~~~[m[K
+gmake[2]: *** [CMakeFiles/robotRos_node.dir/build.make:76: CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_node.dir/all] Error 2
+gmake: *** [Makefile:146: all] Error 2

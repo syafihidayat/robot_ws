@@ -1,0 +1,37 @@
+[0.030s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16
+[0.143s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o[0m
+[2.367s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:10:3:[m[K [01;31m[Kerror: [m[KISO C++ forbids declaration of ‘[01m[KwaypointPublish[m[K’ with no type [[01;31m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-fpermissive-fpermissive]8;;[m[K]
+[2.371s]    10 |   [01;31m[KwaypointPublish[m[K() : Node("send_pose")
+[2.371s]       |   [01;31m[K^~~~~~~~~~~~~~~[m[K
+[2.371s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:[m[K In member function ‘[01m[Kint waypoint::waypointPublish()[m[K’:
+[2.371s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:10:23:[m[K [01;31m[Kerror: [m[Konly constructors take member initializers
+[2.371s]    10 |   waypointPublish() : [01;31m[KNode[m[K("send_pose")
+[2.372s]       |                       [01;31m[K^~~~[m[K
+[2.372s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:15:80:[m[K [01;31m[Kerror: [m[K‘[01m[KwaypointPublish[m[K’ is not a class, namespace, or enumeration
+[2.373s]    15 | create_wall_timer(std::chrono::milliseconds(50), std::bind(&[01;31m[KwaypointPublish[m[K::control, this));
+[2.373s]       |                                                             [01;31m[K^~~~~~~~~~~~~~~[m[K
+[2.373s] 
+[2.379s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:25:3:[m[K [01;35m[Kwarning: [m[Kno return statement in function returning non-void [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wreturn-type-Wreturn-type]8;;[m[K]
+[2.379s]    25 |   [01;35m[K}[m[K
+[2.379s]       |   [01;35m[K^[m[K
+[2.384s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:[m[K In function ‘[01m[Kint main(int, char**)[m[K’:
+[2.384s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:57:33:[m[K [01;31m[Kerror: [m[K‘[01m[KWaypointPublish[m[K’ was not declared in this scope
+[2.384s]    57 |   rclcpp::spin(std::make_shared<[01;31m[KWaypointPublish[m[K>());
+[2.385s]       |                                 [01;31m[K^~~~~~~~~~~~~~~[m[K
+[2.385s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:57:49:[m[K [01;31m[Kerror: [m[Kno matching function for call to ‘[01m[Kmake_shared<<expression error> >()[m[K’
+[2.385s]    57 |   rclcpp::spin([01;31m[Kstd::make_shared<WaypointPublish>()[m[K);
+[2.385s]       |                [01;31m[K~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~[m[K
+[2.386s] In file included from [01m[K/usr/include/c++/11/memory:77[m[K,
+[2.386s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/rclcpp.hpp:153[m[K,
+[2.386s]                  from [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:1[m[K:
+[2.386s] [01m[K/usr/include/c++/11/bits/shared_ptr.h:875:5:[m[K [01;36m[Knote: [m[Kcandidate: ‘[01m[Ktemplate<class _Tp, class ... _Args> std::shared_ptr<_Tp> std::make_shared(_Args&& ...)[m[K’
+[2.386s]   875 |     [01;36m[Kmake_shared[m[K(_Args&&... __args)
+[2.386s]       |     [01;36m[K^~~~~~~~~~~[m[K
+[2.386s] [01m[K/usr/include/c++/11/bits/shared_ptr.h:875:5:[m[K [01;36m[Knote: [m[K  template argument deduction/substitution failed:
+[2.386s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:57:49:[m[K [01;31m[Kerror: [m[Ktemplate argument 1 is invalid
+[2.387s]    57 |   rclcpp::spin([01;31m[Kstd::make_shared<WaypointPublish>()[m[K);
+[2.387s]       |                [01;31m[K~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~[m[K
+[5.351s] gmake[2]: *** [CMakeFiles/robotRos_sendP.dir/build.make:76: CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o] Error 1
+[5.353s] gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_sendP.dir/all] Error 2
+[5.353s] gmake: *** [Makefile:146: all] Error 2
+[5.430s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose' returned '2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16

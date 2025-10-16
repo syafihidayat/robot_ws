@@ -1,0 +1,9 @@
+[ 50%] [32mBuilding CXX object CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o[0m
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::pose_callback(geometry_msgs::msg::Point_<std::allocator<void> >::SharedPtr)[m[K’:
+[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:102:7:[m[K [01;31m[Kerror: [m[K‘[01m[Kcurrent_point[m[K’ was not declared in this scope; did you mean ‘[01m[Kstart_point[m[K’?
+  102 |       [01;31m[Kcurrent_point[m[K.x = currentX;
+      |       [01;31m[K^~~~~~~~~~~~~[m[K
+      |       [32m[Kstart_point[m[K
+gmake[2]: *** [CMakeFiles/robotRos_node.dir/build.make:76: CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_node.dir/all] Error 2
+gmake: *** [Makefile:146: all] Error 2

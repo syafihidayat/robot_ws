@@ -1,0 +1,16 @@
+[0.028s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16
+[0.179s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o[0m
+[2.449s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::control_loop()[m[K’:
+[2.450s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:57:9:[m[K [01;31m[Kerror: [m[K‘[01m[Kcmd[m[K’ was not declared in this scope
+[2.450s]    57 |         [01;31m[Kcmd[m[K.linear.x = 0.2;
+[2.450s]       |         [01;31m[K^~~[m[K
+[2.454s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:64:9:[m[K [01;31m[Kerror: [m[K‘[01m[Kcmd[m[K’ was not declared in this scope
+[2.454s]    64 |         [01;31m[Kcmd[m[K.linear.x = 0.0;
+[2.454s]       |         [01;31m[K^~~[m[K
+[2.458s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:71:22:[m[K [01;31m[Kerror: [m[K‘[01m[Kcmd[m[K’ was not declared in this scope
+[2.458s]    71 |     cmd_pub->publish([01;31m[Kcmd[m[K);
+[2.458s]       |                      [01;31m[K^~~[m[K
+[4.571s] gmake[2]: *** [CMakeFiles/robotRos_node.dir/build.make:76: CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o] Error 1
+[4.571s] gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_node.dir/all] Error 2
+[4.572s] gmake: *** [Makefile:146: all] Error 2
+[4.576s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg' returned '2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16

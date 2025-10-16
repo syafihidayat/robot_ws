@@ -1,0 +1,4 @@
+source;share/robotRos_pkg/local_setup.bash
+source;share/robotRos_pkg/local_setup.dsv
+source;share/robotRos_pkg/local_setup.sh
+source;share/robotRos_pkg/local_setup.zsh

@@ -1,0 +1,46 @@
+[0.027s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16
+[0.072s] -- Found ament_cmake: 1.3.12 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.254s] -- Found geometry_msgs: 4.9.0 (/opt/ros/humble/share/geometry_msgs/cmake)
+[0.290s] -- Found rosidl_generator_c: 3.1.7 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.294s] -- Found rosidl_adapter: 3.1.7 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.304s] -- Found rosidl_generator_cpp: 3.1.7 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.323s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.341s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.381s] -- Found rclcpp: 16.0.15 (/opt/ros/humble/share/rclcpp/cmake)
+[0.402s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.403s] -- Found rmw_fastrtps_cpp: 6.2.8 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[0.511s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.551s] -- Found nav_msgs: 4.9.0 (/opt/ros/humble/share/nav_msgs/cmake)
+[0.569s] -- Found ament_lint_auto: 0.12.14 (/opt/ros/humble/share/ament_lint_auto/cmake)
+[0.615s] WARNING: Package name "robotRos_pkg" does not follow the naming conventions. It should start with a lower case letter and only contain lower case letters, digits, underscores, and dashes.
+[0.640s] -- Added test 'cppcheck' to perform static code analysis on C / C++ code
+[0.640s] -- Configured cppcheck include dirs: $<BUILD_INTERFACE:/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/include>
+[0.640s] -- Configured cppcheck exclude dirs and/or files: 
+[0.641s] -- Added test 'lint_cmake' to check CMake code style
+[0.642s] -- Added test 'uncrustify' to check C / C++ code style
+[0.642s] -- Configured uncrustify additional arguments: 
+[0.642s] -- Added test 'xmllint' to check XML markup files
+[0.644s] -- Configuring done
+[0.658s] -- Generating done
+[0.662s] -- Build files have been written to: /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg
+[0.692s] [35m[1mConsolidate compiler generated dependencies of target robotRos_node[0m
+[0.715s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o[0m
+[2.898s] In file included from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/client.hpp:40[m[K,
+[2.898s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/callback_group.hpp:24[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/any_executable.hpp:20[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/memory_strategy.hpp:25[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/memory_strategies.hpp:18[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/executor_options.hpp:20[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/executor.hpp:37[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/executors/multi_threaded_executor.hpp:25[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/executors.hpp:21[m[K,
+[2.899s]                  from [01m[K/opt/ros/humble/include/rclcpp/rclcpp/rclcpp.hpp:155[m[K,
+[2.899s]                  from [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:1[m[K:
+[2.899s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::control_loop()[m[K’:
+[2.899s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:122:11:[m[K [01;31m[Kerror: [m[Kexpected ‘[01m[K;[m[K’ before ‘[01m[Kdo[m[K’
+[2.899s]   122 |           [01;31m[KRCLCPP_INFO[m[K(this->get_logger(), " target reached");
+[2.899s]       |           [01;31m[K^~~~~~~~~~~[m[K
+[5.850s] gmake[2]: *** [CMakeFiles/robotRos_node.dir/build.make:76: CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o] Error 1
+[5.850s] gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_node.dir/all] Error 2
+[5.851s] gmake: *** [Makefile:146: all] Error 2
+[5.854s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robotRos_pkg' returned '2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robotRos_pkg -- -j16 -l16

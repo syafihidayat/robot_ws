@@ -1,0 +1,29 @@
+[0.024s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16
+[0.157s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o[0m
+[2.517s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:[m[K In member function ‘[01m[Kbool waypointPublish::nextMove()[m[K’:
+[2.517s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:67:5:[m[K [01;35m[Kwarning: [m[Kstatement has no effect [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wunused-value-Wunused-value]8;;[m[K]
+[2.517s]    67 |     [01;35m[Kpublish_count[m[K;
+[2.518s]       |     [01;35m[K^~~~~~~~~~~~~[m[K
+[4.233s] [100%] [32m[1mLinking CXX executable robotRos_sendP[0m
+[4.508s] [100%] Built target robotRos_sendP
+[4.523s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16
+[4.525s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/syafihidayat/Documents/robot_ws/build/robot_pose
+[4.534s] -- Install configuration: ""
+[4.535s] -- Installing: /home/syafihidayat/Documents/robot_ws/install/robot_pose/lib/robot_pose/robotRos_sendP
+[4.536s] -- Set runtime path of "/home/syafihidayat/Documents/robot_ws/install/robot_pose/lib/robot_pose/robotRos_sendP" to ""
+[4.536s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/ament_index/resource_index/package_run_dependencies/robot_pose
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/ament_index/resource_index/parent_prefix_path/robot_pose
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/environment/ament_prefix_path.sh
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/environment/ament_prefix_path.dsv
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/environment/path.sh
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/environment/path.dsv
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/local_setup.bash
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/local_setup.sh
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/local_setup.zsh
+[4.537s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/local_setup.dsv
+[4.537s] -- Installing: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/package.dsv
+[4.538s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/ament_index/resource_index/packages/robot_pose
+[4.538s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/cmake/robot_poseConfig.cmake
+[4.538s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/cmake/robot_poseConfig-version.cmake
+[4.538s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_pose/share/robot_pose/package.xml
+[4.541s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/syafihidayat/Documents/robot_ws/build/robot_pose

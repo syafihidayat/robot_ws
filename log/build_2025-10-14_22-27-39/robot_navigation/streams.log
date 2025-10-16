@@ -1,0 +1,24 @@
+[0.025s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_navigation': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_navigation -- -j16 -l16
+[0.104s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_navigation' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_navigation -- -j16 -l16
+[0.107s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_navigation': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/syafihidayat/Documents/robot_ws/build/robot_navigation
+[0.119s] -- Install configuration: ""
+[0.119s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/launch
+[0.120s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/launch/realsense_3d_map.launch.py
+[0.120s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/rviz
+[0.120s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/rviz/rgbd.rviz
+[0.120s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/ament_index/resource_index/package_run_dependencies/robot_navigation
+[0.120s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/ament_index/resource_index/parent_prefix_path/robot_navigation
+[0.120s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/ament_prefix_path.sh
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/ament_prefix_path.dsv
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/path.sh
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/path.dsv
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.bash
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.sh
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.zsh
+[0.121s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.dsv
+[0.122s] -- Installing: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/package.dsv
+[0.122s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/ament_index/resource_index/packages/robot_navigation
+[0.122s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/cmake/robot_navigationConfig.cmake
+[0.122s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/cmake/robot_navigationConfig-version.cmake
+[0.122s] -- Up-to-date: /home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/package.xml
+[0.144s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_navigation' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/syafihidayat/Documents/robot_ws/build/robot_navigation

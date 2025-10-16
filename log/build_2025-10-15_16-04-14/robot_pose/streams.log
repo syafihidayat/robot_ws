@@ -1,0 +1,10 @@
+[0.029s] Invoking command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16
+[0.104s] [ 50%] [32mBuilding CXX object CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o[0m
+[0.374s] [01m[K/home/syafihidayat/Documents/robot_ws/src/robot_pose/src/robotRos_sendP.cpp:3:10:[m[K [01;31m[Kfatal error: [m[Kgeometry_msgs/msg/point: No such file or directory
+[0.374s]     3 | #include [01;31m[K<geometry_msgs/msg/point>[m[K
+[0.375s]       |          [01;31m[K^~~~~~~~~~~~~~~~~~~~~~~~~[m[K
+[0.375s] compilation terminated.
+[0.380s] gmake[2]: *** [CMakeFiles/robotRos_sendP.dir/build.make:76: CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o] Error 1
+[0.380s] gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_sendP.dir/all] Error 2
+[0.381s] gmake: *** [Makefile:146: all] Error 2
+[0.387s] Invoked command in '/home/syafihidayat/Documents/robot_ws/build/robot_pose' returned '2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/syafihidayat/Documents/robot_ws/build/robot_pose -- -j16 -l16

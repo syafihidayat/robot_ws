@@ -10,6 +10,8 @@ find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -26,6 +28,8 @@ ament_target_dependencies(robotRos_node
   geometry_msgs
   rclcpp
   nav_msgs
+  std_msgs
+  visualization_msgs
 )
 
 install(TARGETS robotRos_node
