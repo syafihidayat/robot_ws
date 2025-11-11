@@ -1,0 +1,17 @@
+**/build/
+**/install/
+
+*.o
+*.out
+*.exe
+*.a
+*.so
+*.dll
+
+
+.vscode/
+.idea/
+
+*.log
+*.tmp
+*.cache

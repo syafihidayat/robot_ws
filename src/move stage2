@@ -1,0 +1,190 @@
+#include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <cmath>
+
+class Movement : public rclcpp::Node
+{
+public:
+    Movement() : Node("MF_Move")
+    {
+        cmd_pubs = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
+
+        odomsubs = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
+                                                                      std::bind(&Movement::odoms_callback, this, std::placeholders::_1));
+
+        robotros_finished_sub = this->create_subscription<std_msgs::msg::Bool>("/robotros_finished", 10,
+                                                                    std::bind(&Movement::robotros_finished_callback, this, std::placeholders::_1));
+
+        timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::base_move, this));
+
+        start_received = false;
+        current_state = WAITING_FOR_STAGE1;
+        current_step = 0;
+
+        RCLCPP_INFO(this->get_logger(), "waiting stage 1 finish");
+    }
+
+private:
+    enum State
+    {
+        WAITING_FOR_STAGE1,
+        // MOVING_TO_TARGET,
+        ALL_STEPS_COMPLATED,
+        EXECUTING_STEPS
+    };
+
+    struct PositionStep
+    {
+        double target_x;
+        double target_y;
+        std::string description;
+    };
+
+    double startX, startY;
+    double poseX, poseY;
+    bool start_received;
+    State current_state;
+    size_t current_step;
+
+    std::vector<PositionStep> position_steps;
+
+    void odoms_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+    {
+        poseX = msg->pose.pose.position.x;
+        poseY = msg->pose.pose.position.y;
+
+        if (!start_received)
+        {
+            startX = poseX;
+            startY = poseY;
+            start_received = true;
+
+            initialize_position_steps();
+        }
+    }
+
+    void initialize_position_steps()
+    {
+        position_steps = {
+            {startX + 0.5, startY, "step 1: move forward"},
+            {startX + 0.5, startY + 0.5, " step 2: move right"}};
+    }
+
+    void robotros_finished_callback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        if (msg->data && start_received)
+        {
+            if (current_state == WAITING_FOR_STAGE1)
+            {
+                current_state = EXECUTING_STEPS;
+                current_step = 0;
+
+                RCLCPP_INFO(this->get_logger(), "ready");
+                RCLCPP_INFO(this->get_logger(), " waiting msg from robotRos");
+            }
+        }
+    }
+
+    void proceed_to_next_step()
+    {
+        current_step++;
+
+        if (current_step < position_steps.size())
+        {
+            RCLCPP_INFO(this->get_logger(), "Starting: %s", position_steps[current_step].description.c_str());
+           
+        }
+        else
+        {
+            current_state = ALL_STEPS_COMPLATED;
+            RCLCPP_INFO(this->get_logger(), "🎉 All movement steps completed!");
+            RCLCPP_INFO(this->get_logger(), "Final position: (%.2f, %.2f)", poseX, poseY);
+        }
+    }
+
+    void base_move()
+    {
+        if (!start_received)
+            return;
+
+        geometry_msgs::msg::Twist cmd;
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+
+        switch (current_state)
+        {
+
+        case WAITING_FOR_STAGE1:
+
+
+            break;
+
+        case EXECUTING_STEPS:
+
+            if (current_step < position_steps.size())
+            {
+                double target_x = position_steps[current_step].target_x;
+                double target_y = position_steps[current_step].target_y;
+
+                double dx = target_x - poseX;
+                double dy = target_y - poseY;
+                double distance = sqrt(dx * dx + dy * dy);
+
+
+                if (distance > 0.1)
+                {
+                    double max_speed = 0.3;
+                    double kp = 0.5;
+
+                    cmd.linear.x = std::max(-max_speed, std::min(max_speed, dx * kp));
+                    cmd.linear.y = std::max(-max_speed, std::min(max_speed, dy * kp));
+                }
+                else
+                {
+
+                    cmd.linear.x = 0.0;
+                    cmd.linear.y = 0.0;
+                    cmd_pubs->publish(cmd);
+
+                    proceed_to_next_step();
+
+                    return;
+                }
+            }
+            else
+            {
+                cmd.linear.x = 0.0;
+                cmd.linear.y = 0.0;
+                cmd_pubs->publish(cmd);
+
+                current_state = ALL_STEPS_COMPLATED;
+                RCLCPP_INFO(this->get_logger(), "all steps complated");
+            }
+            break;
+
+        case ALL_STEPS_COMPLATED:
+            // cmd.linear.x = 0.0;
+            // cmd.linear.y = 0.0;
+            break;
+        }
+
+        cmd_pubs->publish(cmd);
+
+    }
+
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pubs;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odomsubs;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr robotros_finished_sub;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int argc, char **argv)
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<Movement>());
+    rclcpp::shutdown();
+    return 0;
+}

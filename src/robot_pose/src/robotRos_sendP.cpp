@@ -17,29 +17,42 @@ public:
 
     // timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&waypointPublish::control, this));
 
-    waypoint = {
-      {1.0, 0.0},
-      {1.0, 1.0},
-      {0.0, 1.0},
-      {0.0, 0.0}
+    waypoint= {
+      {0.0 , 0.8},
+      {0.5 , 0.8}
+      // {2.0 , -1.6}
     };
-
-    // current_state = 0;
-    // publish_count = 0;
-    // publish_threshold = 10;
 
     current_waypoint_index = 0;
     waypoint_sent = false;
     all_complated = false;
 
     RCLCPP_INFO(this->get_logger(), "waypoint publisher start");
-
     send_waypoint();
 
   }
 
 private:
+/*
+void callback(){
+if(count== 0 && target available){
+  tampung_odom = odom
+  count =1
+}
+   if (fabs(yaw_error) > 0.001)
+        {
+            control_distance = 0.0; // stay in place while turning
+            control_rotate = base_rotate.control_base_rotation(errorYaw, deltaT);
+            std::cout << "turn" << std::endl;
+        }
+        else
+        {
+            control_distance = base_distance.control_base_distance(distance, deltaT);
+        }
+  error = target + tampung odom
 
+}
+*/
   void reached_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if(msg->data && !all_complated){
