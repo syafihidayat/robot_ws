@@ -3,17 +3,18 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/point.hpp>
 #include <std_msgs/msg/bool.hpp>
-// #include <visualization_msgs/msg/marker.hpp>
-// #include <tf2/LinearMath/Quaternion.h>
-// #include <tf2/LinearMath/Matrix3x3.h>
 #include <pid.hpp>
 #include <convertion.hpp>
 #include <cmath>
 
-#define PWM_MAX 2.0
-#define PWM_MIN -2.0
+#define PWM_MAX 1.5
+#define PWM_MIN -1.5
 
-#define kp 0.5
+// #define kp 0.7    //0.5
+// #define ki 0.0
+// #define kd 0.002
+
+#define kp 0.5  
 #define ki 0.0
 #define kd 0.0
 
@@ -29,8 +30,6 @@ class Movement : public rclcpp::Node
 
 public:
   Movement() : Node("Movement_Point")
-  //  omni_distance(PWM_MIN, PWM_MAX, kp, ki, kd),
-  //  omni_angular(PWM_MIN, PWM_MAX, kpT,kiT, kdT)
   {
 
     cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
@@ -68,7 +67,7 @@ private:
   };
 
   int stage1_target_count = 0;
-  int stage1_targets_total = 2;
+  int stage1_targets_total = 0;
   bool stage1_completed = false;
 
   double startX, startY;
@@ -84,6 +83,10 @@ private:
   double stage2_posY = 0;
   double stage2_yaw = 0;
   double stage2_target_distance = 0.0;
+  // double block_distance_meter = 0.5;
+  double block_distance_meter = 1.2;
+  int stage2_blocks = 1;
+  int current_block = 1;
   int move_count = 0;
 
   double convertation(const nav_msgs::msg::Odometry &odom_robot)
@@ -138,14 +141,12 @@ private:
     if (!start_received)
       return;
 
-    // if (current_state == MOVING_TO_TARGET && !target_received)
-    //   return;
-
     if ((current_state == WAITING_FOR_TARGET || current_state == MOVING_TO_TARGET) && !target_received)
       return;
 
     double currT = this->now().seconds();
     float deltaT = currT - prevT;
+    prevT = currT;
 
     geometry_msgs::msg::Twist cmd;
 
@@ -194,8 +195,6 @@ private:
 
         current_state = TARGET_REACHED;
         stage1_target_count++;
-        // current_state = STAGE2_MOVE_STEPbSTEP;
-        // target_received = false;
 
         std_msgs::msg::Bool reached_msg;
         reached_msg.data = true;
@@ -206,15 +205,16 @@ private:
         if (stage1_target_count >= stage1_targets_total)
         {
           stage1_completed = true;
+          stage1_target_count = 0;
+          target_received = false;
           RCLCPP_INFO(this->get_logger(), "target reached");
-          RCLCPP_INFO(this->get_logger(), "STAGE1 COMPLATED");
+          RCLCPP_INFO(this->get_logger(), "STAGE1 COMPLATED - Moving to Stage 2");
         }
         else
         {
 
           RCLCPP_INFO(this->get_logger(), "wait for next target");
         }
-        // break;
       }
       break;
     }
@@ -227,9 +227,10 @@ private:
 
         stage2_posX = currentX;
         stage2_posY = currentY;
-        stage2_target_distance = 0.5;
+        // stage2_target_distance = 0.5;
         stage2_yaw = convertation(odom_robot_msg);
         stage2_initiallized = true;
+        // current_block = 1;
         move_count++;
 
         RCLCPP_INFO(this->get_logger(), "..................................................");
@@ -237,8 +238,12 @@ private:
       }
 
       // double stage2_target_distance = current_block * block_distance_meter;
-      double stage2_targetX = stage2_posX + stage2_target_distance * std::cos(stage2_yaw);
-      double stage2_targetY = stage2_posY + stage2_target_distance * std::sin(stage2_yaw);
+      // double stage2_targetX = stage2_posX + stage2_target_distance * std::cos(stage2_yaw);
+      // double stage2_targetY = stage2_posY + stage2_target_distance * std::sin(stage2_yaw);
+
+      double stage2_target_distance = block_distance_meter;
+      double stage2_targetX = stage2_posX + (current_block * stage2_target_distance) * std::cos(stage2_yaw);
+      double stage2_targetY = stage2_posY + (current_block * stage2_target_distance) * std::sin(stage2_yaw);
 
       double stage2_dx = stage2_targetX - currentX;
       double stage2_dy = stage2_targetY - currentY;
@@ -247,10 +252,33 @@ private:
 
       // double theta = 0 - stage2_yaw;
 
-      if (stage2_distance_error > 0.03)
+      if (stage2_distance_error > 0.05)
       {
         float control_distance = omni_distance.control_base(stage2_distance_error, deltaT);
         // float control_angle = omni_angular.control_base_rotation(theta,deltaT);
+
+        float max_speed;
+
+        if(stage2_distance_error > 1.0){
+          max_speed = 0.3;
+        }else if (stage2_distance_error > 0.6){
+          max_speed = 0.25;
+        }else if (stage2_distance_error > 0.3){
+          max_speed = 0.2;
+        }else{
+          max_speed = 0.15;
+        }
+
+        if(control_distance > max_speed){
+          control_distance = max_speed;
+        }
+
+        float min_speed = 0.1;
+        if(control_distance < min_speed && stage2_distance_error > 0.1){
+          control_distance = min_speed;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "Block %d - Error: %.3fm → Speed: %.3f m/s", current_block, stage2_distance_error, control_distance);
 
         cmd.linear.x = control_distance * std::cos(stage2_angle);
         cmd.linear.y = control_distance * std::sin(stage2_angle);
@@ -267,6 +295,23 @@ private:
         stage2_initiallized = false;
 
         RCLCPP_INFO(this->get_logger(), "✅ Stage2: movement completed! Preparing next move...");
+
+        if (current_block < stage2_blocks)
+        {
+          current_block++;
+          // stage2_initiallized = false;
+          RCLCPP_INFO(this->get_logger(), "moving to block %d", current_block);
+        }
+
+        else
+        {
+
+          current_state = TARGET_REACHED;
+          stage2_initiallized = false;
+
+          RCLCPP_INFO(this->get_logger(), "all %d blocks complated - STOPP", stage2_blocks);
+          RCLCPP_INFO(this->get_logger(), "===================================================================");
+        }
       }
 
       break;
@@ -279,20 +324,27 @@ private:
       if (stage1_completed)
       {
         current_state = STAGE2_MOVE_STEPbSTEP;
-        stage1_target_count = 0;
-        stage1_completed = false;
-
-        RCLCPP_INFO(this->get_logger(), " start moving stage2");
-        RCLCPP_INFO(this->get_logger(), "==============================================================");
+        stage1_completed = false; // ✅ RESET FLAG
+        current_block = 1;
+        RCLCPP_INFO(this->get_logger(), "🚀 STARTING STAGE 2 - Step by Step Movement");
+        RCLCPP_INFO(this->get_logger(), "=============================================");
       }
+
       else if (target_received)
       {
+
         current_state = MOVING_TO_TARGET;
         RCLCPP_INFO(this->get_logger(), "🎯 Starting movement to target %d/%d", stage1_target_count + 1, stage1_targets_total);
       }
+      else
+      {
+
+        RCLCPP_INFO(this->get_logger(), "waiting to next target........");
+      }
       break;
+
     }
-    prevT = currT;
+    // prevT = currT;
     cmd_pub->publish(cmd);
   }
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub;

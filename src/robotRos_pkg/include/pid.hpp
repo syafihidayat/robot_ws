@@ -63,7 +63,7 @@ public:
         err.proportional = error;
         err.integral += err.proportional * deltaT;
 
-        float eDerivative = (err.proportional - error_previous) / deltaT;
+        float eDerivative = (err.proportional - err.preveious) / deltaT;
         err.preveious = err.proportional;
 
         float u =  KP * err.proportional + KI * err.integral + KD * eDerivative ;
