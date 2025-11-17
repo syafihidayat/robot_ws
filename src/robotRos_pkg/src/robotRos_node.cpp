@@ -14,7 +14,7 @@
 // #define ki 0.0
 // #define kd 0.002
 
-#define kp 0.5  
+#define kp 0.5
 #define ki 0.0
 #define kd 0.0
 
@@ -225,65 +225,43 @@ private:
       if (!stage2_initiallized)
       {
 
-        stage2_posX = currentX;
-        stage2_posY = currentY;
-        // stage2_target_distance = 0.5;
+        stage2_posX = 0;
+        stage2_posY = 0;
         stage2_yaw = convertation(odom_robot_msg);
         stage2_initiallized = true;
-        // current_block = 1;
         move_count++;
 
         RCLCPP_INFO(this->get_logger(), "..................................................");
         RCLCPP_INFO(this->get_logger(), "stage 2 starting move step by step");
       }
 
-      // double stage2_target_distance = current_block * block_distance_meter;
-      // double stage2_targetX = stage2_posX + stage2_target_distance * std::cos(stage2_yaw);
-      // double stage2_targetY = stage2_posY + stage2_target_distance * std::sin(stage2_yaw);
-
-      double stage2_target_distance = block_distance_meter;
-      double stage2_targetX = stage2_posX + (current_block * stage2_target_distance) * std::cos(stage2_yaw);
-      double stage2_targetY = stage2_posY + (current_block * stage2_target_distance) * std::sin(stage2_yaw);
+      double stage2_targetX = stage2_posX + block_distance_meter * std::cos(stage2_yaw);
+      double stage2_targetY = stage2_posY + block_distance_meter * std::sin(stage2_yaw);
 
       double stage2_dx = stage2_targetX - currentX;
       double stage2_dy = stage2_targetY - currentY;
       double stage2_distance_error = std::sqrt(stage2_dx * stage2_dx + stage2_dy * stage2_dy);
       double stage2_angle = std::atan2(stage2_dy, stage2_dx);
 
-      // double theta = 0 - stage2_yaw;
+      double theta = 0 - stage2_yaw;
+
+      double real_traveled = std::sqrt((currentX - stage2_posX) * (currentX - stage2_posX) + (currentY - stage2_posY) * (currentY - stage2_posY));
+
+      RCLCPP_INFO(this->get_logger(), "Block %d - Real: (%.3f,%.3f), Target: (%.3f,%.3f)",
+                  current_block, currentX, currentY, stage2_targetX, stage2_targetY);
+      RCLCPP_INFO(this->get_logger(), "Real Traveled: %.3fm, Calculated Error: %.3fm", real_traveled, stage2_distance_error);
 
       if (stage2_distance_error > 0.05)
       {
         float control_distance = omni_distance.control_base(stage2_distance_error, deltaT);
-        // float control_angle = omni_angular.control_base_rotation(theta,deltaT);
-
-        float max_speed;
-
-        if(stage2_distance_error > 1.0){
-          max_speed = 0.3;
-        }else if (stage2_distance_error > 0.6){
-          max_speed = 0.25;
-        }else if (stage2_distance_error > 0.3){
-          max_speed = 0.2;
-        }else{
-          max_speed = 0.15;
-        }
-
-        if(control_distance > max_speed){
-          control_distance = max_speed;
-        }
-
-        float min_speed = 0.1;
-        if(control_distance < min_speed && stage2_distance_error > 0.1){
-          control_distance = min_speed;
-        }
+        float control_angle = omni_angular.control_base_rotation(theta, deltaT);
 
         RCLCPP_INFO(this->get_logger(), "Block %d - Error: %.3fm → Speed: %.3f m/s", current_block, stage2_distance_error, control_distance);
 
         cmd.linear.x = control_distance * std::cos(stage2_angle);
         cmd.linear.y = control_distance * std::sin(stage2_angle);
-        cmd.angular.z = 0;
-        // cmd.angular.z = control_angle;
+        cmd.angular.z = control_angle;
+        // cmd.angular.z = 0;
       }
       else
       {
@@ -308,6 +286,7 @@ private:
 
           current_state = TARGET_REACHED;
           stage2_initiallized = false;
+          // current_block = 1
 
           RCLCPP_INFO(this->get_logger(), "all %d blocks complated - STOPP", stage2_blocks);
           RCLCPP_INFO(this->get_logger(), "===================================================================");
@@ -342,9 +321,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "waiting to next target........");
       }
       break;
-
     }
-    // prevT = currT;
     cmd_pub->publish(cmd);
   }
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub;
