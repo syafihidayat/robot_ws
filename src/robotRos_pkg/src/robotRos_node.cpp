@@ -25,6 +25,8 @@
 PID omni_distance(PWM_MIN, PWM_MAX, kp, ki, kd);
 PID omni_angular(PWM_MIN, PWM_MAX, kpT, kiT, kdT);
 
+
+
 class Movement : public rclcpp::Node
 {
 
@@ -83,9 +85,8 @@ private:
   double stage2_posY = 0;
   double stage2_yaw = 0;
   double stage2_target_distance = 0.0;
-  // double block_distance_meter = 0.5;
   double block_distance_meter = 1.2;
-  int stage2_blocks = 1;
+  int stage2_blocks = 3;
   int current_block = 1;
   int move_count = 0;
 
@@ -108,11 +109,25 @@ private:
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
   {
 
+    Convertion cnvrt;
+
+    Convertion::Quaternion rbt_q = {
+      msg->pose.pose.orientation.w,
+      msg->pose.pose.orientation.x,
+      msg->pose.pose.orientation.y, 
+      msg->pose.pose.orientation.z,
+    };
+    double yaw,roll,pitch;
+    cnvrt.quat_to_eular(rbt_q,yaw, pitch,roll);
     odom_robot_msg = *msg;
     odom_robot_step = *msg;
 
+    // double robot_yaw = yaw * 180.0 / M_PI;
+
     currentX = msg->pose.pose.position.x;
     currentY = msg->pose.pose.position.y;
+
+    RCLCPP_INFO(this->get_logger(), "heading %.2f", yaw);
 
     if (!start_received)
     {
@@ -230,28 +245,31 @@ private:
         stage2_yaw = convertation(odom_robot_msg);
         stage2_initiallized = true;
         move_count++;
+        // rotating = false;
 
         RCLCPP_INFO(this->get_logger(), "..................................................");
         RCLCPP_INFO(this->get_logger(), "stage 2 starting move step by step");
       }
 
-      double stage2_targetX = stage2_posX + block_distance_meter * std::cos(stage2_yaw);
-      double stage2_targetY = stage2_posY + block_distance_meter * std::sin(stage2_yaw);
+      double stage2_targetX = stage2_posX + (current_block * block_distance_meter) * std::cos(stage2_yaw);
+      double stage2_targetY = stage2_posY + (current_block * block_distance_meter) * std::sin(stage2_yaw);
 
       double stage2_dx = stage2_targetX - currentX;
       double stage2_dy = stage2_targetY - currentY;
       double stage2_distance_error = std::sqrt(stage2_dx * stage2_dx + stage2_dy * stage2_dy);
       double stage2_angle = std::atan2(stage2_dy, stage2_dx);
 
-      double theta = 0 - stage2_yaw;
+
+      double current_yaw = convertation(odom_robot_msg);
+      double theta = 0 - current_yaw;
 
       double real_traveled = std::sqrt((currentX - stage2_posX) * (currentX - stage2_posX) + (currentY - stage2_posY) * (currentY - stage2_posY));
 
-      RCLCPP_INFO(this->get_logger(), "Block %d - Real: (%.3f,%.3f), Target: (%.3f,%.3f)",
-                  current_block, currentX, currentY, stage2_targetX, stage2_targetY);
+      RCLCPP_INFO(this->get_logger(), "Block %d - Real: (%.3f,%.3f), Target: (%.3f,%.3f)", current_block, currentX, currentY, stage2_targetX, stage2_targetY);
       RCLCPP_INFO(this->get_logger(), "Real Traveled: %.3fm, Calculated Error: %.3fm", real_traveled, stage2_distance_error);
 
-      if (stage2_distance_error > 0.05)
+      if (stage2_distance_error > 0.03)
+      // if (stage2_distance_error > 0.05)
       {
         float control_distance = omni_distance.control_base(stage2_distance_error, deltaT);
         float control_angle = omni_angular.control_base_rotation(theta, deltaT);
@@ -277,7 +295,7 @@ private:
         if (current_block < stage2_blocks)
         {
           current_block++;
-          // stage2_initiallized = false;
+          stage2_initiallized = false;
           RCLCPP_INFO(this->get_logger(), "moving to block %d", current_block);
         }
 
@@ -286,7 +304,7 @@ private:
 
           current_state = TARGET_REACHED;
           stage2_initiallized = false;
-          // current_block = 1
+          current_block = 1;
 
           RCLCPP_INFO(this->get_logger(), "all %d blocks complated - STOPP", stage2_blocks);
           RCLCPP_INFO(this->get_logger(), "===================================================================");
@@ -327,7 +345,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose_sub;
-  // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
+  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr next_step_pub;
   nav_msgs::msg::Odometry odom_robot_msg;
