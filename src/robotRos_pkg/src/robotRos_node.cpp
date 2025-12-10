@@ -6,6 +6,8 @@
 #include <pid.hpp>
 #include <convertion.hpp>
 #include <cmath>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 
 #define PWM_MAX 1.5
 #define PWM_MIN -1.5
@@ -18,7 +20,7 @@
 #define ki 0.0
 #define kd 0.0
 
-#define kpT 1.0
+#define kpT 1.5
 #define kiT 0.0
 #define kdT 0.0
 
@@ -66,6 +68,13 @@ private:
     STAGE2_MOVE_STEPbSTEP
   };
 
+  enum Stage2state
+  {
+    MOVE_FORWARD,
+    ROTATE,
+    COMPLETE
+  };
+
   int stage1_target_count = 0;
   int stage1_targets_total = 1;
   bool stage1_completed = false;
@@ -83,12 +92,17 @@ private:
   double stage2_posX = 0;
   double stage2_posY = 0;
   double stage2_yaw = 0;
-  double stage2_target_distance = 0.0;
-  double block_distance_meter = 1.2;
-  double rotation_target = 0;
-  int stage2_blocks = 3;
+  // double stage2_target_distance = 0.0;
+  // double block_distance_meter = 1.2;
+  // double rotation_target = 0;
+  // int stage2_blocks = 2;
   int current_block = 1;
-  int move_count = 0;
+  // bool rotation_settled = false;
+  // int move_count = 0;
+  Stage2state stage2_substate = MOVE_FORWARD;
+  double rotation_direction = 1;
+  double rotate_target_angle = 0.0;
+  bool rotation_completed = false;
 
   double convertation(const nav_msgs::msg::Odometry &odom_robot)
   {
@@ -102,6 +116,10 @@ private:
         odom_robot.pose.pose.orientation.z};
     double odom_robot_yaw, odom_robot_pitch, odom_robot_roll;
     convert.quat_to_eular(robot_quat, odom_robot_yaw, odom_robot_pitch, odom_robot_roll);
+
+    odom_robot_yaw = -odom_robot_yaw;
+
+    RCLCPP_INFO(this->get_logger(), "heading %.2f", odom_robot_yaw);
 
     return odom_robot_yaw;
   }
@@ -119,15 +137,13 @@ private:
     };
     double yaw, roll, pitch;
     cnvrt.quat_to_eular(rbt_q, yaw, pitch, roll);
-    odom_robot_msg = *msg;
-    odom_robot_step = *msg;
 
-    // double robot_yaw = yaw * 180.0 / M_PI;
+    odom_robot_msg = *msg;
 
     currentX = msg->pose.pose.position.x;
     currentY = msg->pose.pose.position.y;
 
-    RCLCPP_INFO(this->get_logger(), "heading %.2f", yaw);
+    // RCLCPP_INFO(this->get_logger(), "heading %.2f", -yaw);
 
     if (!start_received)
     {
@@ -185,16 +201,18 @@ private:
       double dx = targetX - currentX;
       double dy = targetY - currentY;
 
+      // double yaw = convertation(odom_robot_msg);
+      // double theta = 0 - yaw;
+
       double odom_robot_yaw = convertation(odom_robot_msg);
       double theta = 0 - odom_robot_yaw;
-
       double distance = std::sqrt(dx * dx + dy * dy);
       double angle = std::atan2(dy, dx);
 
       float control_distance = omni_distance.control_base(distance, deltaT);
       float control_angle = omni_angular.control_base_rotation(theta, deltaT);
 
-      if (distance > 0.05)
+      if (distance > 0.03)
       {
 
         cmd.linear.x = control_distance * std::cos(angle);
@@ -237,118 +255,165 @@ private:
     case STAGE2_MOVE_STEPbSTEP:
     {
 
+      const double BLOCK_DISTANCE_METER = 1.2;
+
       if (!stage2_initiallized)
       {
-
-        stage2_posX = 0;
-        stage2_posY = 0;
+        stage2_posX = currentX;
+        stage2_posY = currentY;
         stage2_yaw = convertation(odom_robot_msg);
+        
+        stage2_substate = MOVE_FORWARD;
+        rotation_direction = -1;
+        rotation_completed = false;
         stage2_initiallized = true;
-        move_count++;
-        rotating = false;
 
-        RCLCPP_INFO(this->get_logger(), "..................................................");
-        RCLCPP_INFO(this->get_logger(), "stage 2 starting move step by step");
+        RCLCPP_INFO(this->get_logger(), "==========================================");
+        RCLCPP_INFO(this->get_logger(), "START: 2 Blocks with Turn in Middle");
+        RCLCPP_INFO(this->get_logger(), "Block 1: Move 120cm → Turn → Block 2: Move 120cm");
+        RCLCPP_INFO(this->get_logger(), "Turn direction: %s",
+                    (rotation_direction == 1) ? "RIGHT" : "LEFT");
       }
 
-      if(!rotating)
+      double current_yaw = convertation(odom_robot_msg);
+
+      switch (stage2_substate)
       {
-        double stage2_targetX = stage2_posX + (current_block * block_distance_meter) * std::cos(stage2_yaw);
-        double stage2_targetY = stage2_posY + (current_block * block_distance_meter) * std::sin(stage2_yaw);
+      case MOVE_FORWARD:
+      {
+        double stage2_targetX = stage2_posX + BLOCK_DISTANCE_METER * std::cos(stage2_yaw);
+        double stage2_targetY = stage2_posY + BLOCK_DISTANCE_METER * std::sin(stage2_yaw);
 
         double stage2_dx = stage2_targetX - currentX;
         double stage2_dy = stage2_targetY - currentY;
         double stage2_distance_error = std::sqrt(stage2_dx * stage2_dx + stage2_dy * stage2_dy);
+
         double stage2_angle = std::atan2(stage2_dy, stage2_dx);
 
-        double current_yaw = convertation(odom_robot_msg);
-        double theta = 0 - current_yaw;
+        double real_traveled = std::sqrt(
+            (currentX - stage2_posX) * (currentX - stage2_posX) +
+            (currentY - stage2_posY) * (currentY - stage2_posY));
 
-        double real_traveled = std::sqrt((currentX - stage2_posX) * (currentX - stage2_posX) + (currentY - stage2_posY) * (currentY - stage2_posY));
+        // double remaining_distance = std::max(0.0, BLOCK_DISTANCE_METER - real_traveled);
+          
+        RCLCPP_INFO(this->get_logger(), "Block %d: %.3f/1.20m, Yaw=%.1f°",
+                current_block, real_traveled, stage2_yaw * 180/M_PI);
 
-        RCLCPP_INFO(this->get_logger(), "Block %d - Real: (%.3f,%.3f), Target: (%.3f,%.3f)", current_block, currentX, currentY, stage2_targetX, stage2_targetY);
-        RCLCPP_INFO(this->get_logger(), "Real Traveled: %.3fm, Calculated Error: %.3fm", real_traveled, stage2_distance_error);
+        RCLCPP_INFO(this->get_logger(), "Block %d: %.3f/1.20m (Error: %.3fm)",
+                    current_block, real_traveled, stage2_distance_error);
 
-        if (stage2_distance_error > 0.03)
-      // if (stage2_distance_error > 0.05)
+        if (real_traveled < 1.17)
+        // if (stage2_distance_error > 0.03)
         {
-          float control_distance = omni_distance.control_base(stage2_distance_error, deltaT);
-          float control_angle = omni_angular.control_base_rotation(theta, deltaT);
+          // float control_distance = omni_distance.control_base(remaining_distance, deltaT);
+          // float control_distance = omni_distance.control_base(stage2_distance_error, deltaT);
 
-          RCLCPP_INFO(this->get_logger(), "Block %d - Error: %.3fm → Speed: %.3f m/s", current_block, stage2_distance_error, control_distance);
+          double speed = 0.50;
 
-          cmd.linear.x = control_distance * std::cos(stage2_angle);
-          cmd.linear.y = control_distance * std::sin(stage2_angle);
-          // cmd.angular.z = control_angle;
+          // cmd.linear.x = control_distance * std::cos(stage2_angle);
+          // cmd.linear.y = control_distance * std::sin(stage2_angle);
+          cmd.linear.x = speed * std::cos(stage2_yaw);
+          cmd.linear.y = speed * std::sin(stage2_yaw);
           cmd.angular.z = 0.0;
         }
         else
         {
-          if(current_block == 1){
-            rotating = true;
-            // rotation_target = stage2_yaw - M_PI/2;
-            rotation_target = current_yaw + M_PI/2;
+          cmd.linear.x = 0.0;
+          cmd.linear.y = 0.0;
+          cmd.angular.z = 0.0;
 
-            RCLCPP_INFO(this->get_logger(), "🔄 Block 1 movement completed, starting 90° rotation");
+          if (current_block == 1)
+          {
+            if (rotation_direction == 1)
+            {
 
-            RCLCPP_INFO(this->get_logger(), "🔄 ROTATION SETUP - Current: %.1f° → Target: %.1f°",current_yaw * 180/M_PI, rotation_target * 180/M_PI);
-          }else{
-            // rotating = false;
-            // current_block++;
-            stage2_initiallized = false;
-
-            RCLCPP_INFO(this->get_logger(), "✅ Block %d completed", current_block-1);
-            
-            if(current_block > stage2_blocks){
-              current_state = TARGET_REACHED;
-              RCLCPP_INFO(this->get_logger(), "🎉 Stage 2 completed!");
+              rotate_target_angle = stage2_yaw - (M_PI / 2);
             }
+            else
+            {
+
+              rotate_target_angle = stage2_yaw + (M_PI / 2);
+            }
+
+            while (rotate_target_angle > M_PI)
+              rotate_target_angle -= 2 * M_PI;
+            while (rotate_target_angle < -M_PI)
+              rotate_target_angle += 2 * M_PI;
+
+            stage2_substate = ROTATE;
+            rotation_completed = false;
+
+            RCLCPP_INFO(this->get_logger(), "✅ Block 1 DONE! Turning %s 90°...",
+                        (rotation_direction == 1) ? "RIGHT" : "LEFT");
+          }
+          else if (current_block == 2)
+          {
+            stage2_substate = COMPLETE;
+            RCLCPP_INFO(this->get_logger(), "✅ Block 2 DONE! Mission complete.");
           }
         }
+
+        break;
       }
 
-      else{
-        
-        double current_yaw = convertation(odom_robot_msg);
-        double rotating_error = rotation_target - current_yaw;
+      case ROTATE:
+      {
+        double angle_error = rotate_target_angle - current_yaw;
 
-        while(rotating_error > M_PI) rotating_error -= 2 * M_PI;
-        while(rotating_error < -M_PI) rotating_error += 2 * M_PI;
+        while (angle_error > M_PI) angle_error -= 2 * M_PI;
+        while (angle_error < -M_PI)angle_error += 2 * M_PI;
 
-        double error_deg = rotating_error * 180/M_PI;
+         RCLCPP_INFO(this->get_logger(), "Turning: %.1f° error (%.3f rad)",angle_error * 180 / M_PI, angle_error);
 
-
-        RCLCPP_INFO(this->get_logger(), "🔄 Rotation - Error: %.1f° (%.3f rad)", error_deg, rotating_error);
-
-
-        if(std::abs(rotating_error) > 0.05)
+        if (std::fabs(angle_error) > 0.03)
         {
-
-          float control_angle = omni_angular.control_base_rotation(error_deg,deltaT);
+          // float control_angle = omni_angular.control_base_rotation(angle_error, deltaT);
+          double speed_angle = 0.25;
 
           cmd.linear.x = 0.0;
           cmd.linear.y = 0.0;
-          cmd.angular.z = control_angle;
+          cmd.angular.z = speed_angle;
+          // cmd.angular.z = control_angle;
         }
-
         else
         {
-          rotating = false;
+          cmd.linear.x = 0.0;
+          cmd.linear.y = 0.0;
+          cmd.angular.z = 0.0;
 
-          stage2_yaw = rotation_target;
+          stage2_yaw = rotate_target_angle;
 
-          current_block++;
-          stage2_initiallized = false;
+          stage2_posX = currentX;
+          stage2_posY = currentY;
+          stage2_substate = MOVE_FORWARD;
+          current_block = 2;
 
-          RCLCPP_INFO(this->get_logger(), "✅ Rotation completed for Block 1");
-          RCLCPP_INFO(this->get_logger(), "➡️ Moving to Block %d/%d", current_block, stage2_blocks);
-
-          if(current_block > stage2_blocks){
-            current_state = TARGET_REACHED;
-            RCLCPP_INFO(this->get_logger(), "🎉 Stage 2 completed!");
-          }
+          RCLCPP_INFO(this->get_logger(), "🔄 Turn complete! Ready for Block 2 (120cm)...");
         }
+
+        break;
       }
+
+      case COMPLETE:
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+
+        stage2_initiallized = false;
+        stage2_substate = MOVE_FORWARD;
+        current_state = TARGET_REACHED;
+        current_block = 1;
+
+        RCLCPP_INFO(this->get_logger(), "==========================================");
+        RCLCPP_INFO(this->get_logger(), "MISSION COMPLETE!");
+        RCLCPP_INFO(this->get_logger(), "Pattern: Forward → Turn → Forward");
+        RCLCPP_INFO(this->get_logger(), "Total: 2 blocks × 1.20m = 2.40m");
+        RCLCPP_INFO(this->get_logger(), "==========================================");
+        break;
+      }
+      }
+
       break;
     }
     case TARGET_REACHED:
@@ -387,7 +452,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr next_step_pub;
   nav_msgs::msg::Odometry odom_robot_msg;
-  nav_msgs::msg::Odometry odom_robot_step;
+  // nav_msgs::msg::Odometry odom_robot_step;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 
