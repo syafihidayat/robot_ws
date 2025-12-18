@@ -1,1 +1,1 @@
-prepend-non-duplicate-if-exists;PATH;bin
+/home/syafihidayat/Documents/robot_ws/build/robot_navigation/ament_cmake_environment_hooks/path.dsv

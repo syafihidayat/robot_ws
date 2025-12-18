@@ -27,6 +27,10 @@
 PID omni_distance(PWM_MIN, PWM_MAX, kp, ki, kd);
 PID omni_angular(PWM_MIN, PWM_MAX, kpT, kiT, kdT);
 
+// rcl_subscription_t proxy_sub;
+
+// std_msgs__msg__Bool proxy_msg;
+
 class Movement : public rclcpp::Node
 {
 
@@ -41,6 +45,9 @@ public:
 
     pose_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose", 10,
                                                                     std::bind(&Movement::pose_callback, this, std::placeholders::_1));
+
+    proxy_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata", 10,
+                                                                    std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
 
     // pose2_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose_steps", 10,
     //                                                                  std::bind(&Movement::pose2_callback, this, std::placeholders::_1));
@@ -65,6 +72,7 @@ private:
     WAITING_FOR_TARGET,
     MOVING_TO_TARGET,
     TARGET_REACHED,
+    PAUSED_STAGE1,
     STAGE2_MOVE_STEPbSTEP
   };
 
@@ -76,7 +84,7 @@ private:
   };
 
   int stage1_target_count = 0;
-  int stage1_targets_total = 1;
+  int stage1_targets_total = 2;
   bool stage1_completed = false;
 
   double startX, startY;
@@ -84,6 +92,8 @@ private:
   double currentX, currentY;
   bool start_received;
   bool target_received;
+  bool sensor_obstacle = false;
+  bool was_obstacle = false;
   State current_state;
   double prevT;
 
@@ -92,14 +102,9 @@ private:
   double stage2_posX = 0;
   double stage2_posY = 0;
   double stage2_yaw = 0;
-  // double stage2_target_distance = 0.0;
-  // double block_distance_meter = 1.2;
-  // double rotation_target = 0;
-  // int stage2_blocks = 2;
   int current_block = 1;
-  // bool rotation_settled = false;
-  // int move_count = 0;
   Stage2state stage2_substate = MOVE_FORWARD;
+  State previous_state_before_pause;
   double rotation_direction = 1;
   double rotate_target_angle = 0.0;
   bool rotation_completed = false;
@@ -167,6 +172,34 @@ private:
     }
   }
 
+  void proxy_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+
+      bool detected = msg->data;
+
+      RCLCPP_INFO(this->get_logger(), "SENSOR RAW: %s", detected ? "TRUE" : "FALSE");
+
+      sensor_obstacle = !detected;
+
+      RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", sensor_obstacle ? "STOP" : "GO");
+
+      if(sensor_obstacle){
+        if(current_state == MOVING_TO_TARGET){
+          previous_state_before_pause = current_state;
+          current_state = PAUSED_STAGE1;
+
+          if(previous_state_before_pause == MOVING_TO_TARGET){
+            RCLCPP_INFO(this->get_logger(), "⏸️ Stage 1 PAUSED");
+          }
+        }
+      }
+
+    was_obstacle = sensor_obstacle;
+
+
+
+  }
+
   void control_loop()
   {
     if (!start_received)
@@ -198,6 +231,17 @@ private:
 
     case MOVING_TO_TARGET:
     {
+
+      if(sensor_obstacle){
+        RCLCPP_INFO(this->get_logger(), "⛔ Stage 1: BLOCKED by obstacle");
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+        break;
+
+      }
+
+
       double dx = targetX - currentX;
       double dy = targetY - currentY;
 
@@ -215,9 +259,13 @@ private:
       if (distance > 0.03)
       {
 
+        // cmd.linear.x = 0.25;
+        // cmd.linear.y = 0.25;
+        // cmd.angular.z = 0.0;
         cmd.linear.x = control_distance * std::cos(angle);
         cmd.linear.y = control_distance * std::sin(angle);
-        cmd.angular.z = control_angle;
+        cmd.angular.z = 0.0;
+        // cmd.angular.z = control_angle;
         RCLCPP_INFO(this->get_logger(), "move robot");
       }
       else
@@ -251,6 +299,22 @@ private:
       }
       break;
     }
+
+    case PAUSED_STAGE1:
+      cmd.linear.x = 0.0;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = 0.0;
+
+      if(!sensor_obstacle){
+
+        current_state = previous_state_before_pause;
+        RCLCPP_INFO(this->get_logger(), "✅ Resuming from pause");
+
+      }else{
+
+        RCLCPP_INFO(this->get_logger(), "⏸️ PAUSED - Waiting for obstacle to clear...");
+      }
+      break;
 
     case STAGE2_MOVE_STEPbSTEP:
     {
@@ -423,7 +487,7 @@ private:
 
       if (stage1_completed)
       {
-        current_state = STAGE2_MOVE_STEPbSTEP;
+        // current_state = STAGE2_MOVE_STEPbSTEP;
         stage1_completed = false; // ✅ RESET FLAG
         current_block = 1;
         RCLCPP_INFO(this->get_logger(), "🚀 STARTING STAGE 2 - Step by Step Movement");
@@ -449,6 +513,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr next_step_pub;
   nav_msgs::msg::Odometry odom_robot_msg;

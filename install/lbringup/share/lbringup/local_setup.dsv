@@ -1,2 +1,1 @@
-source;share/lbringup/environment/ament_prefix_path.sh
-source;share/lbringup/environment/path.sh
+/home/syafihidayat/Documents/robot_ws/build/lbringup/ament_cmake_environment_hooks/local_setup.dsv

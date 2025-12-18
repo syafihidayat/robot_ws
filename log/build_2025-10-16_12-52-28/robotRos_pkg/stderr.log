@@ -1,8 +1,0 @@
-[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:[m[K In member function ‘[01m[Kvoid Movement::showVisualLine()[m[K’:
-[01m[K/home/syafihidayat/Documents/robot_ws/src/robotRos_pkg/src/robotRos_node.cpp:103:5:[m[K [01;31m[Kerror: [m[K‘[01m[Kstart[m[K’ was not declared in this scope; did you mean ‘[01m[KstartX[m[K’?
-  103 |     [01;31m[Kstart[m[K.point.z = 0.0;
-      |     [01;31m[K^~~~~[m[K
-      |     [32m[KstartX[m[K
-gmake[2]: *** [CMakeFiles/robotRos_node.dir/build.make:76: CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:137: CMakeFiles/robotRos_node.dir/all] Error 2
-gmake: *** [Makefile:146: all] Error 2

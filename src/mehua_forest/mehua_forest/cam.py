@@ -2,20 +2,23 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import random
+from collections import deque
 
 
-class ObjectDetectionMapp:
-    def __init__(self,field_size=3):
-        self.field_size = field_size
-        self.grid = np.full((field_size, field_size), 'Empty', dtype=object)
+class ObjectDetectionMapper:
+    def __init__(self,field_width=4,field_height=3):
+        self.field_width = field_width
+        self.field_height = field_height
+
+        self.grid = np.full((field_height, field_width), 'Empty', dtype=object)
         self.detected_objects = []
         self.robot_position = (0,0)
 
-        self.model = YOLO('yolo.pt')
+        self.model = YOLO('/home/syafihidayat/Documents/robot_ws/src/mehua_forest/models/yolo11n.pt')
 
         self.target_classes = {
-            'real' : 'Target',
-            'fake' : 'Forbiden',
+            'true' : 'Target',
+            'false' : 'Forbiden',
             'symbol' : 'Forbiden'
         }
 
@@ -25,8 +28,8 @@ class ObjectDetectionMapp:
         image = np.ones((height,width,3), dtype=np.uint8) * 255
 
         objects_to_draw = [
-            {'class' : 'fake' , 'count' : 3},
-            {'class' : 'real' , 'count' : 3},
+            {'class' : 'false' , 'count' : 3},
+            {'class' : 'true' , 'count' : 3},
             {'class' : 'symbol' , 'count' : 2}
         ]
 
@@ -43,39 +46,42 @@ class ObjectDetectionMapp:
             (100, 500), (300, 500), (500, 500), (700, 500)
         ]
 
-        for i,(class_name, pos) in enumerate(zip(all_objects, positions)):
-            if class_name == 'real':
-                color = (0,255 , 0)
-                cv2.rectangle(image,(pos[0]-20, pos[1]-40), (pos[0]+20, pos[1]+ 40), color, -1)
-                cv2.putText(image, 'KFS REAL', (pos[0]-25, pos[1]-50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,0,0), 2)
+        for class_name, pos in zip(all_objects, positions):
+            x,y = pos
 
-            elif class_name == 'fake':
-                color = (0, 0, 255)
-                cv2.rectangle(image, (pos[0]-25, pos[1]-30), (pos[0] + 25,pos[1]+ 30), color, -1)
-                cv2.putText(image, "KFS FAKE", (pos[0]-15, pos[1]-40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+            if class_name == 'true':
+                color = (0,255,0)
+                label = "REAL"
+            elif class_name == 'false':
+                color = (0,0,255)
+                label = "FAKE"
+            else:
+                color = (255,0,0)
+                label = "SYMBOL"
 
-            elif class_name == 'symbol' :
-                color = (255, 0 , 0)
-                cv2.rectangle(image, (pos[0]-30, pos[1]- 50), (pos[0]+30, pos[1]+50),color, -1)
-                cv2.putText(image, 'KFS R1', (pos[0]-25, pos[1]-60),
-                    cv2.FONT_HERSHEY_SIMPLEX,0.5, (255,255,255), 2)
+            cv2.rectangle(image,(x-25,y-35),(x+25,y+35),color,-1)
+            cv2.putText(image,label,(x-20,y-50),cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,0,0),2)
+
 
 
         return image
 
-    def capture_and_detect(self):
+        def capture_and_detect_once(self):
+            frame = self.generate_synthetic_image()
+            return self.capture_and_detect(frame)
+
+    def capture_and_detect(self,frame):
 
         print("_______CAPTURE AND DETECT ONCE________")
 
-        frame = self.generate_synthetic_image()
-
-        cv2.imwrite('capture_frame_4x3.jpg', frame)
-
-        results = self.model(frame)
-
+        result = self.model(frame)
         detected_objects = []
+
+
+        # cv2.imwrite('capture_frame_4x3.jpg', frame)
+
+        # results = self.model(frame)
+
         for result in results:
             boxes = result.boxes
             for box in boxes:
@@ -114,13 +120,13 @@ class ObjectDetectionMapp:
             center_x = (y1 + y2) / 2
 
             grid_x  = int(center_x / grid_cell_width)
-            grid_y  = int(center_y / grid_cell_width)
+            grid_y  = int(center_y / grid_cell_height)
 
             grid_x = max(0, min(self.field_width-1, grid_x))
             grid_y = max(0, min(self.field_height-1, grid_y))
 
-            obj_type = obj['type']
-            class_name = obj['class_name']
+            # obj_type = obj['type']
+            # class_name = obj['class_name']
             self.grid[grid_y, grid_x] = f"{obj_type}_{class_name}"
 
             self.detected_objects.append({
@@ -150,8 +156,9 @@ class ObjectDetectionMapp:
 
         for obj in detected_objects:
             x1,y1,x2,y2 = map(int, obj['bbox'])
-            class_name = obj['class_name']
-            obj_type = obj['type']
+            # class_name = obj['class_name']
+            # obj_type = obj['type']
+            color = (0, 255, 0)
 
         if obj_type == 'Target':
             color = (0, 255,0)
@@ -160,62 +167,76 @@ class ObjectDetectionMapp:
 
         cv2.rectangle(display_frame,(x1,y1), (x2,y2), color, 3)
 
-        label = f"{class_name} ({obj_type})"
-        cv2.putText(display_frame, label,(x1,y1-10),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color,2)
+        cv2.putText(display_frame,f"{obj['class_name']}({obj['type']})",(x1,y1-10),0,0.6,color,2)
+
+
+        # label = f"{class_name} ({obj_type})"
+        # cv2.putText(display_frame, label,(x1,y1-10),
+        #     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color,2)
         
-        center_x = int((x1 + x2) / 2)
-        center_y = int((y1 + y2) / 2)
-        cv2.circle(display_frame,(center_x,center_y), 5,(255,0,0), -1)
+        # center_x = int((x1 + x2) / 2)
+        # center_y = int((y1 + y2) / 2)
+        # cv2.circle(display_frame,(center_x,center_y), 5,(255,0,0), -1)
 
-        grid_x = int(center_x / grid_cell_width)
-        grid_y = int(center_y / grid_cell_height)
-        coord_text = f"({grid_x},{grid_y})"
-        cv2.putText(display_frame, coord_text, (center_x+10, center_y),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        # grid_x = int(center_x / grid_cell_width)
+        # grid_y = int(center_y / grid_cell_height)
+        # coord_text = f"({grid_x},{grid_y})"
+        # cv2.putText(display_frame, coord_text, (center_x+10, center_y),
+        #                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
-        robot_x = int((self.robot_position[0] + 0.5) * grid_cell_width)
-        robot_y = int((self.robot_position[1] + 0.5) * grid_cell_height)
-        cv2.circle(display_frame,(robot_x, robot_y), 10,(0,0,255), -1)
-        cv2.putText(display_frame,"Robot", (robot_x-30, robot_y-15),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6,(0,0,255), 2)
+        # robot_x = int((self.robot_position[0] + 0.5) * grid_cell_width)
+        # robot_y = int((self.robot_position[1] + 0.5) * grid_cell_height)
+        # cv2.circle(display_frame,(robot_x, robot_y), 10,(0,0,255), -1)
+        # cv2.putText(display_frame,"Robot", (robot_x-30, robot_y-15),
+        #         cv2.FONT_HERSHEY_SIMPLEX, 0.6,(0,0,255), 2)
 
 
         return display_frame
 
 
     def print_grid_map(self):
-        """Menampilkan grid map 4x3 dalam format text"""
-        print(f"\n=== GRID MAP {self.field_width}x{self.field_height} ===")
-        print("Legend: 🤖=Robot, 🎯=Target, ❌=Forbidden, ◻️=Empty")
-        print("=" * (self.field_width * 4 + 1))
+
+        print("\n=== GRID MAP ===")
+
+        for y in range(self.field_height):
+            print(" | ".join(str(cell)for cell in self.grid[y]))
+        # """Menampilkan grid map 4x3 dalam format text"""
+        # print(f"\n=== GRID MAP {self.field_width}x{self.field_height} ===")
+        # print("Legend: 🤖=Robot, 🎯=Target, ❌=Forbidden, ◻️=Empty")
+        # print("=" * (self.field_width * 4 + 1))
         
-        for i in range(self.field_height):
-            row = "|"
-            for j in range(self.field_width):
-                cell = self.grid[i, j]
-                if cell == 'Robot':
-                    row += " 🤖 |"
-                elif 'Target' in str(cell):
-                    row += " 🎯 |"
-                elif 'Forbidden' in str(cell):
-                    row += " ❌ |"
-                else:
-                    row += " ◻️ |"
-            print(row)
-        print("=" * (self.field_width * 4 + 1))
+        # for i in range(self.field_height):
+        #     row = "|"
+        #     for j in range(self.field_width):
+        #         cell = self.grid[i, j]
+        #         if cell == 'Robot':
+        #             row += " 🤖 |"
+        #         elif 'Target' in str(cell):
+        #             row += " 🎯 |"
+        #         elif 'Forbidden' in str(cell):
+        #             row += " ❌ |"
+        #         else:
+        #             row += " ◻️ |"
+        #     print(row)
+        # print("=" * (self.field_width * 4 + 1))
 
     def get_pathfinding_map(self):
         """Mengembalikan array untuk pathfinding (0=available, 1=obstacle)"""
-        pathfinding_grid = np.zeros((self.field_height, self.field_width), dtype=int)
+        pathfinding_grid = np.zeros_like(self.grid,dtype=int)
+        # pathfinding_grid = np.zeros((self.field_height, self.field_width), dtype=int)
+
+        for y in range(self.field_height):
+            for x in range(Self.field_width):
+                if "Forbidden" in str(self.grid[y,x]):
+                    pathfinding_grid[y,x]=1
         
-        for i in range(self.field_height):
-            for j in range(self.field_width):
-                cell = self.grid[i, j]
-                if 'Forbidden' in str(cell):
-                    pathfinding_grid[i, j] = 1  # Obstacle
-                else:
-                    pathfinding_grid[i, j] = 0  # Available
+        # for i in range(self.field_height):
+        #     for j in range(self.field_width):
+        #         cell = self.grid[i, j]
+        #         if 'Forbidden' in str(cell):
+        #             pathfinding_grid[i, j] = 1  # Obstacle
+        #         else:
+        #             pathfinding_grid[i, j] = 0  # Available
         
         return pathfinding_grid
 

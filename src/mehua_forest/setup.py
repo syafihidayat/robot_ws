@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'cam = mehua_forest.cam:main',
+            # 'cam = mehua_forest.cam:main',
             'main = mehua_forest.main:main'
         ],
     },

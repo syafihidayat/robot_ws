@@ -3,96 +3,92 @@ import numpy as np
 from .cam import ObjectDetectionMapper 
 from .bfs import PathFinder 
 
-def main():
-    # Inisialisasi mapper dengan grid 4x3
-    mapper = ObjectDetectionMapper(field_width=4, field_height=3)
-    
-    print("=== SISTEM DETEKSI OBJEK DAN MAPPING 4x3 ===")
-    print("Melakukan capture dan deteksi sekali...")
-    
-    # Capture dan deteksi sekali
-    frame, detected_objects = mapper.capture_and_detect_once()
-    
-    print(f"\nObject yang terdeteksi:")
-    for i, obj in enumerate(detected_objects):
-        print(f"{i+1}. {obj['class_name']} ({obj['type']}) - Confidence: {obj['confidence']:.2f}")
-    
-    # Map ke grid 4x3
-    mapper.map_to_grid(detected_objects, frame.shape)
-    
-    # Tampilkan hasil
-    display_frame = mapper.display_detection_results(frame, detected_objects)
-    
-    # Simpan dan tampilkan gambar hasil deteksi
-    cv2.imwrite('detection_results_4x3.jpg', display_frame)
-    cv2.imshow('Object Detection Results 4x3', display_frame)
-    cv2.waitKey(3000)
-    cv2.destroyAllWindows()
-    
-    # Tampilkan grid map
-    mapper.print_grid_map()
-    
-    # Dapatkan array untuk pathfinding
-    pathfinding_map = mapper.get_pathfinding_map()
-    print(f"\nArray Pathfinding {mapper.field_width}x{mapper.field_height} (0=available, 1=obstacle):")
-    print(pathfinding_map)
-    
-    # Inisialisasi path finder
-    path_finder = PathFinder(pathfinding_map)
-    
-    # 1. Cari path ke semua target individual
-    start_position = mapper.robot_position
-    target_paths = path_finder.find_all_target_paths(start_position, mapper.detected_objects)
-    
-    print(f"\n=== HASIL PATHFINDING INDIVIDUAL ===")
-    if target_paths:
-        for target_name, path_info in target_paths.items():
-            print(f"\nPath ke {target_name}:")
-            print(f"Posisi: {path_info['position']}")
-            print(f"Jarak: {path_info['distance']} langkah")
-            print(f"Jalur: {path_info['path']}")
-    else:
-        print("Tidak ada path yang ditemukan ke target manapun")
-    
-    # 2. Cari urutan optimal untuk semua target
-    print(f"\n=== URUTAN OPTIMAL PENJEMPUTAN TARGET ===")
-    optimal_sequence = path_finder.find_optimal_path_sequence(start_position, mapper.detected_objects)
-    
-    if optimal_sequence:
-        total_steps = 0
-        current_pos = start_position
-        
-        print("Rencana perjalanan optimal:")
-        for i, step in enumerate(optimal_sequence):
-            print(f"\n{i+1}. Ke {step['target']} di {step['position']}:")
-            print(f"   Dari {current_pos} ke {step['position']}")
-            print(f"   Jarak: {step['distance']} langkah")
-            print(f"   Jalur: {step['path']}")
-            
-            # Simulasi pergerakan
-            print("   Pergerakan:")
-            for move_step, pos in enumerate(step['path'][1:], 1):  # Skip start position
-                print(f"     Langkah {move_step}: Pindah ke {pos}")
-            
-            total_steps += step['distance']
-            current_pos = step['position']
-        
-        print(f"\nTotal langkah untuk semua target: {total_steps}")
-    else:
-        print("Tidak bisa menemukan urutan optimal")
-    
-    # Tampilkan data lengkap untuk debugging
-    print(f"\n=== DATA LENGKAP GRID 4x3 ===")
-    print(f"Posisi Robot: {mapper.robot_position}")
-    print(f"Dimensi Grid: {mapper.field_width} x {mapper.field_height}")
-    print(f"Grid Map Detail:")
-    for i in range(mapper.field_height):
-        for j in range(mapper.field_width):
-            print(f"  [{j},{i}]: {mapper.grid[i,j]}")
-    
-    print(f"\nObject dalam grid:")
-    for obj in mapper.detected_objects:
-        print(f"  {obj['class_name']} di {obj['grid_position']} ({obj['type']})")
+class ObjectDetectionMapper:
+    def __init__(self, field_width=3, field_height=3, cam_id=0):
+        self.field_width = field_width
+        self.field_height = field_height
+        self.grid = np.full((field_height, field_width), 'Empty', dtype=object)
+        self.detected_objects = []
+        self.robot_position = (0,0)
 
-if __name__ == "__main__":
-    main()
+        # Load model YOLO (.pt bukan zip lagi)
+        self.model = YOLO("/home/syafihidayat/Documents/robot_ws/src/mehua_forest/models/yolo11n.pt")
+
+        # Kamera
+        self.cam = cv2.VideoCapture(cam_id)
+
+        self.target_classes = {
+            'real'   : 'Target',
+            'fake'   : 'Forbidden',
+            'symbol' : 'Forbidden'
+        }
+
+    # =================== CAMERA DETECT SEKALI ===================== #
+    def capture_and_detect_once(self):
+        ret, frame = self.cam.read()
+        if not ret:
+            print("❌ Kamera tidak bisa dibuka / tidak terdeteksi!")
+            return None, []
+
+        results = self.model(frame)[0]
+        detected = []
+
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+            x1,y1,x2,y2 = map(int, box.xyxy[0])
+            class_name = self.model.names[cls_id]
+
+            obj_type = self.target_classes.get(class_name, "Unknown")
+            detected.append({
+                'class_name': class_name,
+                'type': obj_type,
+                'confidence': conf,
+                'bbox': (x1,y1,x2,y2)
+            })
+
+        self.detected_objects = detected
+        return frame, detected
+
+    # ================== GRID MAPPING ================== #
+    def map_to_grid(self, detected_objects, frame_size):
+        w,h = frame_size[1], frame_size[0]
+        cell_w = w / self.field_width
+        cell_h = h / self.field_height
+
+        for obj in detected_objects:
+            x1,y1,x2,y2 = obj['bbox']
+            center_x = (x1+x2)/2
+            center_y = (y1+y2)/2
+
+            grid_x = int(center_x // cell_w)
+            grid_y = int(center_y // cell_h)
+
+            obj['grid_position'] = (grid_x, grid_y)
+            self.grid[grid_y, grid_x] = obj['type']
+
+    # ================== TAMPILKAN HASIL ================== #
+    def display_detection_results(self, frame, detected_objects):
+        for obj in detected_objects:
+            x1,y1,x2,y2 = obj['bbox']
+            cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
+            cv2.putText(frame, obj['class_name'], (x1,y1-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6,(0,255,0),2)
+        return frame
+
+    # untuk pathfinding
+    def get_pathfinding_map(self):
+        path_map = np.zeros((self.field_height, self.field_width), dtype=int)
+        for y in range(self.field_height):
+            for x in range(self.field_width):
+                if self.grid[y,x] == "Forbidden":
+                    path_map[y,x] = 1
+        return path_map
+
+    def print_grid_map(self):
+        print("\n=== GRID MAP ===")
+        for y in range(self.field_height):
+            print("|", end=" ")
+            for x in range(self.field_width):
+                print(f"{self.grid[y,x]:8}", end=" ")
+            print("|")
