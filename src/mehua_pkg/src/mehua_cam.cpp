@@ -10,6 +10,9 @@
 #include "mehua_pkg/utils.h"
 #include "mehua_pkg/yolov8Predictor.h"
 
+#define CLASS_FALSE 0
+#define CLASS_TRUE 1
+
 class DetectionPublish : public rclcpp::Node
 {
 public:
@@ -65,7 +68,6 @@ public:
       }
       catch (...)
       {
-
       }
 
       pipe.start(cfg);
@@ -95,114 +97,129 @@ private:
     if (!is_initialized)
       return;
 
-    try
+    auto frames = pipe.wait_for_frames();
+    auto color_frame = frames.get_color_frame();
+    auto depth_frame = frames.get_depth_frame();
+
+    if (!color_frame || !depth_frame)
     {
-      auto frames = pipe.wait_for_frames();
-      auto color_frame = frames.get_color_frame();
-      auto depth_frame = frames.get_depth_frame();
+      RCLCPP_WARN(this->get_logger(), "Frame kosong dari realsense");
+      return;
+    }
 
-      if (!color_frame || !depth_frame)
+    cv::Mat color_image(cv::Size(1280, 720), CV_8UC3, (void *)color_frame.get_data(), cv::Mat::AUTO_STEP);
+    cv::Mat frame = color_image.clone();
+
+    if (frame.empty())
+    {
+      RCLCPP_WARN(this->get_logger(), "frame kosong dari kamera");
+      return;
+    }
+
+    std::vector<Yolov8Result> result = predictor->predict(frame);
+
+    bool target_found = false;
+    Yolov8Result best_real;
+    float min_depth = 999.0f;
+    float best_cx = 0,best_cy = 0;
+
+    // std::map<int, int> classCounts;
+    // std::map<std::string, int> classNameCounts;
+    // int totalDtections = 0;
+
+    for (const auto &res : result)
+    {
+      if(res.classId == CLASS_TRUE)
       {
-        RCLCPP_WARN(this->get_logger(), "Frame kosong dari realsense");
-        return;
-      }
+        float cx = res.box.x + res.box.width * 0.5f;
+        float cy = res.box.y + res.box.height * 0.5f;
 
-      cv::Mat color_image(cv::Size(1280, 720), CV_8UC3, (void *)color_frame.get_data(), cv::Mat::AUTO_STEP);
-      cv::Mat frame = color_image.clone();
+        float depth = depth_frame.get_distance((int)cx,(int)cy);
 
-      if (frame.empty())
-      {
-        RCLCPP_WARN(this->get_logger(), "frame kosong dari kamera");
-        return;
-      }
-
-      std::vector<Yolov8Result> result = predictor->predict(frame);
-
-      std::map<int, int> classCounts;
-      std::map<std::string, int> classNameCounts;
-      int totalDtections = 0;
-
-      for (const auto &res : result)
-      {
-        classCounts[res.classId]++;
-        classNameCounts[classNames[res.classId]]++;
-        totalDtections++;
-      }
-
-      std::stringstream detectionInfo;
-      detectionInfo << "Total detections: " << totalDtections;
-      RCLCPP_INFO(this->get_logger(), "%s", detectionInfo.str().c_str());
-
-      int yOffset = 30;
-
-      cv::rectangle(frame, cv::Point(10, 10), cv::Point(150, 40), cv::Scalar(0, 0, 0), -1);
-      cv::putText(frame, detectionInfo.str(), cv::Point(15, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
-
-      yOffset = 70;
-      for (const auto &[className, count] : classNameCounts)
-      {
-        if (count > 0)
+        if(depth > 0.1 && depth < min_depth)
         {
-          std::string classInfo = className + " : " + std::to_string(count);
-
-          cv::rectangle(frame, cv::Point(10, yOffset - 20), cv::Point(200, yOffset + 5), cv::Scalar(0, 0, 0), -1);
-
-          cv::putText(frame, classInfo, cv::Point(15, yOffset), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 0), 2);
-
-          yOffset += 30;
+          min_depth = depth;
+          best_real = res;
+          best_cx = cx;
+          best_cy = cy;
+          target_found = true;
         }
       }
-
-      utils::visualizeDetection(frame, result, classNames);
-
-      cv::imshow("YOLOv8 Webcam", frame);
-      cv::waitKey(1);
-
-      if (!result.empty())
-      {
-        auto bbox = result[0].box;
-        geometry_msgs::msg::Point point;
-        point.x = bbox.x;
-        point.y = bbox.y;
-        point.z = 0;
-        boundingBox_pub->publish(point);
-      }
     }
 
-      catch(const std::exception &e)
-      {
-        RCLCPP_ERROR(this->get_logger(), "Error in detection loop: %s", e.what());
-      }
-  }  
+    utils::visualizeDetection(frame,result, classNames);
 
-    std::unique_ptr<YOLOPredictor> predictor;
-    std::vector<std::string> classNames;
-    rs2::pipeline pipe;
-    rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr boundingBox_pub;
-    rclcpp::TimerBase::SharedPtr timer_;
-    bool is_initialized;
-         
+    geometry_msgs::msg::Point msg;
+
+    if(!target_found)
+    {
+      msg.x = 0;
+      msg.y = -1;
+      msg.z = 0;
+      boundingBox_pub->publish(msg);
+
+      cv::putText(frame, "NO TRUE TARGET",cv::Point(450, 360),cv::FONT_HERSHEY_SIMPLEX,1.0, cv::Scalar(0, 0, 255), 3);
+      cv::imshow("YOLO CAM", frame);
+      cv::waitKey(1);
+      return;
+    }
+
+    float img_cx = frame.cols / 2.0f;
+    float error_x = best_cx - img_cx;
+
+    msg.x = error_x;
+    msg.y = min_depth;
+    msg.z = best_real.conf;
+    boundingBox_pub->publish(msg);
+
+    auto bbox = best_real.box;
+
+    cv::rectangle(frame,
+                  cv::Rect(bbox.x, bbox.y, bbox.width, bbox.height),
+                  cv::Scalar(0, 255, 0), 3);
+      
+    cv::circle(frame,cv::Point(best_cx, best_cy),6, cv::Scalar(0, 255, 0), -1);
+
+    cv::line(frame,cv::Point(frame.cols / 2, 0),cv::Point(frame.cols / 2, frame.rows),
+             cv::Scalar(255, 0, 0), 1);
+
+    std::string info = "ERR_X: " + std::to_string((int)error_x) + "  DEPTH: " + std::to_string(min_depth);
+
+    cv::putText(frame, info,cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX,
+                0.8, cv::Scalar(0, 255, 255), 2);
+
+    cv::imshow("YOLO CAM", frame);
+    cv::waitKey(1);
+
+  }
+  
+  std::unique_ptr<YOLOPredictor> predictor;
+  std::vector<std::string> classNames;
+  rs2::pipeline pipe;
+  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr boundingBox_pub;
+  rclcpp::TimerBase::SharedPtr timer_;
+  bool is_initialized;
 };
 
-  int main(int argc, char **argv)
+int main(int argc, char **argv)
+{
+
+  rclcpp::init(argc, argv);
+
+  try
   {
-
-    rclcpp::init(argc, argv);
-
-    try
-    {
-      auto node = std::make_shared<DetectionPublish>();
-      RCLCPP_INFO(node->get_logger(), "Node nya berjalan");
-      rclcpp::spin(node);
-    }
-    catch (const std::exception &e)
-    {
-      std::cerr << "error: " << e.what() << std::endl;
-      return 1;
-    }
-
-    rclcpp::shutdown();
-    cv::destroyAllWindows();
-
-    return 0;
+    auto node = std::make_shared<DetectionPublish>();
+    RCLCPP_INFO(node->get_logger(), "Node nya berjalan");
+    rclcpp::spin(node);
   }
+  catch (const std::exception &e)
+  {
+    std::cerr << "error: " << e.what() << std::endl;
+    return 1;
+  }
+
+  rclcpp::shutdown();
+  cv::destroyAllWindows();
+
+  return 0;
+}

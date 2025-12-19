@@ -44,11 +44,15 @@ public:
                                                                   std::bind(&Movement::odom_callback, this, std::placeholders::_1));
 
     pose_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose", 10,
-                                                                    std::bind(&Movement::pose_callback, this, std::placeholders::_1));
+                                                                  std::bind(&Movement::pose_callback, this, std::placeholders::_1));
 
     proxy_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata", 10,
-                                                                    std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
+                                                                  std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
 
+
+
+    boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
+                                                                  std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));                                                                
     // pose2_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose_steps", 10,
     //                                                                  std::bind(&Movement::pose2_callback, this, std::placeholders::_1));
 
@@ -195,7 +199,24 @@ private:
       }
 
     was_obstacle = sensor_obstacle;
+  }
 
+  void coordinate_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  {
+    // float errorX = msg->x;
+    // float depth =  msg->y;
+    // float target = msg->z;
+
+    // if(depth <= 0.0 || depth > 3.0)
+    //   return;
+
+    // float angular_z = 0.10 * errorX;
+
+    // float desired_dist = 0.6;
+    // float errorDist = depth - desired_dist;
+    // float linear_x ;
+
+    // angular_z = std::clamp(angular_z, -0.8f, 0.8f);
 
 
   }
@@ -512,7 +533,8 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose_sub;
-  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
+  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr boundingBox_sub;
+  // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr next_step_pub;
