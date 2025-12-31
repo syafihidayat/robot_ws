@@ -18,12 +18,12 @@ class DetectionPublish : public rclcpp::Node
 public:
   DetectionPublish() : Node("object_detection")
   {
-    float confThreshold = 0.04f;
+    float confThreshold = 0.25f;      //0.04f;
     float iouThreshold = 0.04f;
     float maskThreshold = 0.5f;
     bool isGPU = false;
 
-    std::string modelPath = "/home/syafihidayat/Documents/robot_ws/src/mehua_pkg/models/best2.onnx";
+    std::string modelPath = "/home/syafihidayat/Documents/robot_ws/src/mehua_pkg/models/fullmerah.onnx";
     std::string classNamesPath = "/home/syafihidayat/Documents/robot_ws/src/mehua_pkg/models/KFS.names";
 
     classNames = utils::loadNames(classNamesPath);
@@ -91,6 +91,16 @@ public:
   bool isInitialized() const { return is_initialized; }
 
 private:
+
+  bool target_locked = false;
+  float locked_cx = 0.0f;
+  float locked_cy = 0.0f;
+  int lost_count = 0;
+
+  const float MAX_JUMP = 80.0f;
+  const int LOST_THRESHOLD = 5;
+
+
   void detectionLoop()
   {
 
@@ -121,44 +131,68 @@ private:
     bool target_found = false;
     Yolov8Result best_real;
     float min_depth = 999.0f;
-    float best_cx = 0,best_cy = 0;
-
-    // std::map<int, int> classCounts;
-    // std::map<std::string, int> classNameCounts;
-    // int totalDtections = 0;
+    float best_cx = 0, best_cy = 0;
 
     for (const auto &res : result)
     {
-      if(res.classId == CLASS_TRUE)
+      if (res.classId != CLASS_TRUE)
+        continue;
+
+      float cx = res.box.x + res.box.width * 0.5f;
+      float cy = res.box.y + res.box.height * 0.5f;
+
+      float depth = depth_frame.get_distance((int)cx, (int)cy);
+
+      if (depth < 0.1f || depth > 2.0f)
+        continue;
+
+      if (target_locked)
       {
-        float cx = res.box.x + res.box.width * 0.5f;
-        float cy = res.box.y + res.box.height * 0.5f;
+        float dist = std::hypot(cx - locked_cx, cy - locked_cy);
 
-        float depth = depth_frame.get_distance((int)cx,(int)cy);
-
-        if(depth > 0.1 && depth < min_depth)
+        if (dist < MAX_JUMP)
         {
-          min_depth = depth;
           best_real = res;
           best_cx = cx;
           best_cy = cy;
+          min_depth = depth;
+          target_found = true;
+          break;
+        }
+      }
+
+      else
+      {
+        if (depth < min_depth)
+        {
+          best_real = res;
+          best_cx = cx;
+          best_cy = cy;
+          min_depth = depth;
           target_found = true;
         }
       }
     }
 
-    utils::visualizeDetection(frame,result, classNames);
+    utils::visualizeDetection(frame, result, classNames);
 
     geometry_msgs::msg::Point msg;
 
-    if(!target_found)
+    if (!target_found)
     {
+
+      lost_count++;
+      if(lost_count > LOST_THRESHOLD)
+      {
+        target_locked = false;
+      }
+
       msg.x = 0;
       msg.y = -1;
       msg.z = 0;
       boundingBox_pub->publish(msg);
 
-      cv::putText(frame, "NO TRUE TARGET",cv::Point(450, 360),cv::FONT_HERSHEY_SIMPLEX,1.0, cv::Scalar(0, 0, 255), 3);
+      cv::putText(frame, "NO TRUE TARGET", cv::Point(450, 360), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 3);
       cv::imshow("YOLO CAM", frame);
       cv::waitKey(1);
       return;
@@ -166,6 +200,12 @@ private:
 
     float img_cx = frame.cols / 2.0f;
     float error_x = best_cx - img_cx;
+
+    lost_count = 0;
+    target_locked = true;
+    // locked_target = best;
+    locked_cx = best_cx;
+    locked_cy = best_cy;
 
     msg.x = error_x;
     msg.y = min_depth;
@@ -177,22 +217,21 @@ private:
     cv::rectangle(frame,
                   cv::Rect(bbox.x, bbox.y, bbox.width, bbox.height),
                   cv::Scalar(0, 255, 0), 3);
-      
-    cv::circle(frame,cv::Point(best_cx, best_cy),6, cv::Scalar(0, 255, 0), -1);
 
-    cv::line(frame,cv::Point(frame.cols / 2, 0),cv::Point(frame.cols / 2, frame.rows),
+    cv::circle(frame, cv::Point(best_cx, best_cy), 6, cv::Scalar(0, 255, 0), -1);
+
+    cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows),
              cv::Scalar(255, 0, 0), 1);
 
     std::string info = "ERR_X: " + std::to_string((int)error_x) + "  DEPTH: " + std::to_string(min_depth);
 
-    cv::putText(frame, info,cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX,
+    cv::putText(frame, info, cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX,
                 0.8, cv::Scalar(0, 255, 255), 2);
 
     cv::imshow("YOLO CAM", frame);
     cv::waitKey(1);
-
   }
-  
+
   std::unique_ptr<YOLOPredictor> predictor;
   std::vector<std::string> classNames;
   rs2::pipeline pipe;

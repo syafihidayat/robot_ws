@@ -15,10 +15,7 @@ gnome-terminal --tab --title="Target" -- bash -c "source install/setup.bash;
                                                  read -n 1"
 
 
-
-
-
-# gnome-terminal --tab --title="Robot" -- bash -c "source install/setup.bash;
-#                                                   ros2 launch ado_description robot.launch.py;
-#                                                   echo Press any key to close;
-#                                                   read -n 1"
+gnome-terminal --tab --title="Camera" -- bash -c "source install/setup.bash;
+                                                ros2 run mehua_pkg mehua_cam;
+                                                echo Press any key to close;
+                                                read -n 1"

@@ -3,20 +3,17 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/point.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/u_int16.hpp>
 #include <pid.hpp>
 #include <convertion.hpp>
 #include <cmath>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 
-#define PWM_MAX 1.5
-#define PWM_MIN -1.5
+#define PWM_MAX 1.0  //1.5
+#define PWM_MIN -1.0 //1.5
 
-// #define kp 0.7    //0.5
-// #define ki 0.0
-// #define kd 0.002
-
-#define kp 0.5
+#define kp 0.8 //1.0
 #define ki 0.0
 #define kd 0.0
 
@@ -27,9 +24,6 @@
 PID omni_distance(PWM_MIN, PWM_MAX, kp, ki, kd);
 PID omni_angular(PWM_MIN, PWM_MAX, kpT, kiT, kdT);
 
-// rcl_subscription_t proxy_sub;
-
-// std_msgs__msg__Bool proxy_msg;
 
 class Movement : public rclcpp::Node
 {
@@ -38,7 +32,7 @@ public:
   Movement() : Node("Movement_Point")
   {
 
-    cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
+    // cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
 
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
                                                                   std::bind(&Movement::odom_callback, this, std::placeholders::_1));
@@ -49,14 +43,30 @@ public:
     proxy_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata", 10,
                                                                   std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
 
+    proxy2_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata2", 10,
+                                                                  std::bind(&Movement::proxy2_callback, this, std::placeholders::_1));
+
 
 
     boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
-                                                                  std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));                                                                
+                                                                  std::bind(&Movement::coordinate_callback, this, std::placeholders::_1)); 
+                                                                  
+                  
+    tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
+                                                                  std::bind(&Movement::tof_callback, this, std::placeholders::_1));
+                                                                  
+                                                                  
+
+
+
+
+
     // pose2_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose_steps", 10,
     //                                                                  std::bind(&Movement::pose2_callback, this, std::placeholders::_1));
 
     reached_pub = this->create_publisher<std_msgs::msg::Bool>("/target_reached", 10);
+
+    proxy_true_pub = this->create_publisher<std_msgs::msg::Bool>("/true_sensor", 10);
 
     next_step_pub = this->create_publisher<std_msgs::msg::Bool>("/next_step", 10);
 
@@ -84,6 +94,9 @@ private:
   {
     MOVE_FORWARD,
     ROTATE,
+    SEARCH_TARGET,
+    ALIGN_BY_YOLO,
+    APPROACH_TARGET,
     COMPLETE
   };
 
@@ -91,15 +104,22 @@ private:
   int stage1_targets_total = 2;
   bool stage1_completed = false;
 
+  bool camera_active = false;
+  bool stage1_complated_for_camera = false;
+
   double startX, startY;
   double targetX, targetY;
   double currentX, currentY;
   bool start_received;
   bool target_received;
   bool sensor_obstacle = false;
+  bool sensor_obstacle2 = false;
+  bool tof_valid = false;
   bool was_obstacle = false;
   State current_state;
   double prevT;
+
+
 
   bool stage2_initiallized = false;
   bool rotating = false;
@@ -112,6 +132,9 @@ private:
   double rotation_direction = 1;
   double rotate_target_angle = 0.0;
   bool rotation_completed = false;
+  bool yolo_valid = false;
+  float yolo_errorX = 0.0;
+  float yolo_depth = -1.0;
 
   double convertation(const nav_msgs::msg::Odometry &odom_robot)
   {
@@ -152,7 +175,7 @@ private:
     currentX = msg->pose.pose.position.x;
     currentY = msg->pose.pose.position.y;
 
-    // RCLCPP_INFO(this->get_logger(), "heading %.2f", -yaw);
+  
 
     if (!start_received)
     {
@@ -180,20 +203,28 @@ private:
   {
 
       bool detected = msg->data;
+      // proxy_true_pub->publish(msg);
+
 
       RCLCPP_INFO(this->get_logger(), "SENSOR RAW: %s", detected ? "TRUE" : "FALSE");
 
       sensor_obstacle = !detected;
 
       RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", sensor_obstacle ? "STOP" : "GO");
-
+      
+      std_msgs::msg::Bool out_msg;
+      out_msg.data = msg->data;
+      proxy_true_pub->publish(out_msg);
+      
       if(sensor_obstacle){
+        
+
         if(current_state == MOVING_TO_TARGET){
           previous_state_before_pause = current_state;
           current_state = PAUSED_STAGE1;
 
           if(previous_state_before_pause == MOVING_TO_TARGET){
-            RCLCPP_INFO(this->get_logger(), "⏸️ Stage 1 PAUSED");
+            RCLCPP_INFO(this->get_logger(), "Stage 1 PAUSED");
           }
         }
       }
@@ -201,23 +232,68 @@ private:
     was_obstacle = sensor_obstacle;
   }
 
+  void proxy2_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    bool detected2 = msg->data;
+
+    RCLCPP_INFO(this->get_logger(), "SENSOR2 RAW: %s", detected2 ? "TRUE" : "FALSE");
+
+    sensor_obstacle2 = !detected2;
+
+    RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", sensor_obstacle2 ? "NOT GRIPP" : "GRIPP");
+
+    std_msgs::msg::Bool out_msg;
+    out_msg.data = msg->data;
+    proxy_true_pub->publish(out_msg);
+    
+  }
+
+  double tof_distance = 0;
+
+  void tof_callback(const std_msgs::msg::UInt16::SharedPtr msg)
+  {
+    uint16_t distance = msg->data;
+
+    tof_distance = distance;
+    tof_valid = true;
+
+    RCLCPP_DEBUG(this->get_logger(),"ToF distance: %u mm", distance);
+
+  }
+
   void coordinate_callback(const geometry_msgs::msg::Point::SharedPtr msg)
   {
+
+    if(!camera_active) return;
+    yolo_errorX = msg->x;
+    yolo_depth = msg->y;
+    float target = msg->z;
+
+    yolo_valid = (yolo_depth > 0.0);
+
+    // if(!camera_active) {
+
+    //   static bool first_time = true;
+    //   if(first_time){
+    //     RCLCPP_INFO(this->get_logger(),  "Camera data received but NOT ACTIVE (waiting Stage 1)");
+
+    //     first_time = false;
+    //   }
+
+    //   return;
+
+    // }
     // float errorX = msg->x;
     // float depth =  msg->y;
     // float target = msg->z;
 
-    // if(depth <= 0.0 || depth > 3.0)
+    // if(depth < 0)
+    // {
+    //   RCLCPP_WARN(this->get_logger(), "NO VALID TARGET FROM CAMERA");
     //   return;
+    // }
 
-    // float angular_z = 0.10 * errorX;
-
-    // float desired_dist = 0.6;
-    // float errorDist = depth - desired_dist;
-    // float linear_x ;
-
-    // angular_z = std::clamp(angular_z, -0.8f, 0.8f);
-
+    // RCLCPP_INFO(this->get_logger(), "📷 Camera: errorX=%.3f, depth=%.3f, target=%.3f", errorX, depth, target);
 
   }
 
@@ -245,7 +321,7 @@ private:
       if (target_received)
       {
         current_state = MOVING_TO_TARGET;
-        RCLCPP_INFO(this->get_logger(), "🎯 Starting movement to target %d/%d",
+        RCLCPP_INFO(this->get_logger(), " Starting movement to target %d/%d",
                     stage1_target_count + 1, stage1_targets_total);
       }
       break;
@@ -254,7 +330,7 @@ private:
     {
 
       if(sensor_obstacle){
-        RCLCPP_INFO(this->get_logger(), "⛔ Stage 1: BLOCKED by obstacle");
+        RCLCPP_INFO(this->get_logger(), " Stage 1: BLOCKED by obstacle");
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
         cmd.angular.z = 0.0;
@@ -279,12 +355,26 @@ private:
 
       if (distance > 0.03)
       {
+        float speed1 = 0.2;
 
-        // cmd.linear.x = 0.25;
-        // cmd.linear.y = 0.25;
-        // cmd.angular.z = 0.0;
-        cmd.linear.x = control_distance * std::cos(angle);
-        cmd.linear.y = control_distance * std::sin(angle);
+        // float kp_distance = 0.5;  // gain, adjust sesuai kebutuhan
+        // speed1 = kp_distance * distance;
+        // speed1 = std::min(speed1, 0.3f);  // Limit max speed
+        // speed1 = std::max(speed1, 0.05f); // Minimum speed
+
+        float vx = std::cos(angle);
+        float vy = std::sin(angle);
+        float magnitude = std::sqrt(vx*vx + vy*vy);
+        if(magnitude > 0.001){
+
+          vx = vx / magnitude;
+          vy = vy / magnitude;
+        }
+
+        cmd.linear.x = speed1 *  vx;
+        cmd.linear.y = speed1 *  vy;
+        // cmd.linear.x = control_distance *  std::cos(angle);
+        // cmd.linear.y = control_distance *  std::sin(angle);
         cmd.angular.z = 0.0;
         // cmd.angular.z = control_angle;
         RCLCPP_INFO(this->get_logger(), "move robot");
@@ -307,6 +397,8 @@ private:
         if (stage1_target_count >= stage1_targets_total)
         {
           stage1_completed = true;
+          stage1_complated_for_camera = true;
+          camera_active = true;
           stage1_target_count = 0;
           target_received = false;
           RCLCPP_INFO(this->get_logger(), "target reached");
@@ -329,11 +421,11 @@ private:
       if(!sensor_obstacle){
 
         current_state = previous_state_before_pause;
-        RCLCPP_INFO(this->get_logger(), "✅ Resuming from pause");
+        RCLCPP_INFO(this->get_logger(), "Resuming from pause");
 
       }else{
 
-        RCLCPP_INFO(this->get_logger(), "⏸️ PAUSED - Waiting for obstacle to clear...");
+        RCLCPP_INFO(this->get_logger(), " PAUSED - Waiting for obstacle to clear...");
       }
       break;
 
@@ -403,6 +495,7 @@ private:
         }
         else
         {
+          
           cmd.linear.x = 0.0;
           cmd.linear.y = 0.0;
           cmd.angular.z = 0.0;
@@ -473,7 +566,7 @@ private:
           stage2_substate = MOVE_FORWARD;
           current_block = 2;
 
-          RCLCPP_INFO(this->get_logger(), "🔄 Turn complete! Ready for Block 2 (120cm)...");
+          RCLCPP_INFO(this->get_logger(), "Turn complete! Ready for Block 2 (120cm)...");
         }
 
         break;
@@ -511,7 +604,7 @@ private:
         // current_state = STAGE2_MOVE_STEPbSTEP;
         stage1_completed = false; // ✅ RESET FLAG
         current_block = 1;
-        RCLCPP_INFO(this->get_logger(), "🚀 STARTING STAGE 2 - Step by Step Movement");
+        RCLCPP_INFO(this->get_logger(), "STARTING STAGE 2 - Step by Step Movement");
         RCLCPP_INFO(this->get_logger(), "=============================================");
       }
 
@@ -519,7 +612,7 @@ private:
       {
 
         current_state = MOVING_TO_TARGET;
-        RCLCPP_INFO(this->get_logger(), "🎯 Starting movement to target %d/%d", stage1_target_count + 1, stage1_targets_total);
+        RCLCPP_INFO(this->get_logger(), "Starting movement to target %d/%d", stage1_target_count + 1, stage1_targets_total);
       }
       else
       {
@@ -528,14 +621,17 @@ private:
       }
       break;
     }
-    cmd_pub->publish(cmd);
+    // cmd_pub->publish(cmd);
   }
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub;
+  // rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr boundingBox_sub;
+  rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr tof_sub;
   // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy2_sub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr proxy_true_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr next_step_pub;
   nav_msgs::msg::Odometry odom_robot_msg;
