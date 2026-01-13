@@ -23,7 +23,7 @@ public:
     float maskThreshold = 0.5f;
     bool isGPU = false;
 
-    std::string modelPath = "/home/syafihidayat/Documents/robot_ws/src/mehua_pkg/models/fullmerah.onnx";
+    std::string modelPath = "/home/syafihidayat/Documents/robot_ws/src/mehua_pkg/models/best2.onnx";
     std::string classNamesPath = "/home/syafihidayat/Documents/robot_ws/src/mehua_pkg/models/KFS.names";
 
     classNames = utils::loadNames(classNamesPath);

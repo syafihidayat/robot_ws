@@ -19,7 +19,9 @@ find_package(tf2_geometry_msgs REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
-add_executable(robotRos_node src/robotRos_node.cpp)
+add_executable(robotRos_node 
+  src/robotRos_node.cpp
+  src/grid_planner.cpp)
 
 target_include_directories(robotRos_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

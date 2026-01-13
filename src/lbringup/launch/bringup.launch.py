@@ -108,6 +108,23 @@ def generate_launch_description():
             description='Use Joystick'
         ),
 
+        DeclareLaunchArgument(
+            name='run_rtabmap',
+            default_value='false',
+            description='run rtabmap'
+        ),
+
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution((
+                    FindPackageShare('rtabmap_examples'),
+                    'launch',
+                    'realsense_d435i_infra.launch.py'
+                ))
+            ),
+            condition=IfCondition(LaunchConfiguration('run_rtabmap'))
+        ),
+
         Node(
             condition=IfCondition(LaunchConfiguration("madgwick")),
             package='imu_filter_madgwick',
@@ -132,7 +149,8 @@ def generate_launch_description():
             name='twist_mux',
             parameters=[twist_mux_params],
             remappings=[
-                ('cmd_vel_out','omni_cont/cmd_vel')
+                  ('cmd_vel', '/cmd_vel'),  
+                ('/cmd_vel_out','omni_cont/cmd_vel')
             ]
         ),
 

@@ -1,4 +1,6 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/robotRos_node.dir/src/grid_planner.cpp.o"
+  "CMakeFiles/robotRos_node.dir/src/grid_planner.cpp.o.d"
   "CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o"
   "CMakeFiles/robotRos_node.dir/src/robotRos_node.cpp.o.d"
   "robotRos_node"

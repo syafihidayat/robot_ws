@@ -210,6 +210,30 @@ robotRos_node/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robotRos_node.dir/build.make CMakeFiles/robotRos_node.dir/build
 .PHONY : robotRos_node/fast
 
+src/grid_planner.o: src/grid_planner.cpp.o
+.PHONY : src/grid_planner.o
+
+# target to build an object file
+src/grid_planner.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robotRos_node.dir/build.make CMakeFiles/robotRos_node.dir/src/grid_planner.cpp.o
+.PHONY : src/grid_planner.cpp.o
+
+src/grid_planner.i: src/grid_planner.cpp.i
+.PHONY : src/grid_planner.i
+
+# target to preprocess a source file
+src/grid_planner.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robotRos_node.dir/build.make CMakeFiles/robotRos_node.dir/src/grid_planner.cpp.i
+.PHONY : src/grid_planner.cpp.i
+
+src/grid_planner.s: src/grid_planner.cpp.s
+.PHONY : src/grid_planner.s
+
+# target to generate assembly for a file
+src/grid_planner.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robotRos_node.dir/build.make CMakeFiles/robotRos_node.dir/src/grid_planner.cpp.s
+.PHONY : src/grid_planner.cpp.s
+
 src/robotRos_node.o: src/robotRos_node.cpp.o
 .PHONY : src/robotRos_node.o
 
@@ -250,6 +274,9 @@ help:
 	@echo "... robotRos_pkg_uninstall"
 	@echo "... uninstall"
 	@echo "... robotRos_node"
+	@echo "... src/grid_planner.o"
+	@echo "... src/grid_planner.i"
+	@echo "... src/grid_planner.s"
 	@echo "... src/robotRos_node.o"
 	@echo "... src/robotRos_node.i"
 	@echo "... src/robotRos_node.s"
