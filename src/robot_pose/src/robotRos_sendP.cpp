@@ -18,10 +18,11 @@ public:
     // timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&waypointPublish::control, this));
 
     waypoint= {
-      {0.0 , 1.0},
-      {1.0 , 1.0}
+      // {0.3 , 1.0},
+      // {1.0 , 1.0}
       // {2.0 , -1.6}
-      // {0.5 , 0.0}
+      {1.0 , 0.0},
+      {1.0 , 1.0}
     };
 
     current_waypoint_index = 0;

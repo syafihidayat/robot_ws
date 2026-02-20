@@ -14,7 +14,7 @@
 #define PWM_MAX 1.0  // 1.5
 #define PWM_MIN -1.0 // 1.5
 
-#define kp 0.8 // 1.0
+#define kp 0.8    //0.8 // 1.0
 #define ki 0.0
 #define kd 0.0
 
@@ -27,7 +27,6 @@ PID omni_angular(PWM_MIN, PWM_MAX, kpT, kiT, kdT);
 
 GridPlanner planner;
 
-
 class Movement : public rclcpp::Node
 {
 
@@ -38,23 +37,28 @@ public:
     cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
 
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
-                                                                std::bind(&Movement::odom_callback, this, std::placeholders::_1));
+                                                                  std::bind(&Movement::odom_callback, this, std::placeholders::_1));
 
     pose_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose", 10,
-                                                               std::bind(&Movement::pose_callback, this, std::placeholders::_1));
+                                                                    std::bind(&Movement::pose_callback, this, std::placeholders::_1));
 
     proxy_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata", 10,
                                                                std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
 
+    waypoint_backend_sub = this->create_subscription<geometry_msgs::msg::Point>("/planner/waypoint", 10,
+                                                                std::bind(&Movement::waypoint_backend_callback, this, std::placeholders::_1));
+
+    // proxy2_sub = this->create_subscription<std_msgs::msg::Bool>("proxy2data", 10,
+    //                                                             std::bind(&Movement::proxy2_callback, this, std::placeholders::_1));
+
     boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
-                                                               std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
+                                                                           std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
 
-    tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
-                                                                std::bind(&Movement::tof_callback, this, std::placeholders::_1));
+    // tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
+    //                                                            std::bind(&Movement::tof_callback, this, std::placeholders::_1));
 
-    
     swing_sub = this->create_subscription<std_msgs::msg::Bool>("swing", 10,
-                                                                std::bind(&Movement::swing_callback, this, std::placeholders::_1));
+                                                               std::bind(&Movement::swing_callback, this, std::placeholders::_1));
 
     // pose2_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose_steps", 10,
     //                                                                  std::bind(&Movement::pose2_callback, this, std::placeholders::_1));
@@ -76,7 +80,6 @@ public:
   }
 
 private:
-
   static bool swing_reset_done;
 
   enum State
@@ -144,12 +147,12 @@ private:
   float yolo_errorX = 0.0;
   float yolo_depth = -1.0;
   float target = 0.0;
-  
+
   int last_known_target_cell = -1;
-    
+
   double convertation(const nav_msgs::msg::Odometry &odom_robot)
   {
-    
+
     Convertion convert;
 
     Convertion::Quaternion robot_quat = {
@@ -166,26 +169,26 @@ private:
 
     return odom_robot_yaw;
   }
-  
+
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
   {
-    
+
     Convertion cnvrt;
 
     Convertion::Quaternion rbt_q = {
-      msg->pose.pose.orientation.w,
-      msg->pose.pose.orientation.x,
+        msg->pose.pose.orientation.w,
+        msg->pose.pose.orientation.x,
         msg->pose.pose.orientation.y,
         msg->pose.pose.orientation.z,
-      };
-      double yaw, roll, pitch;
-      cnvrt.quat_to_eular(rbt_q, yaw, pitch, roll);
-      
+    };
+    double yaw, roll, pitch;
+    cnvrt.quat_to_eular(rbt_q, yaw, pitch, roll);
+
     odom_robot_msg = *msg;
 
     currentX = msg->pose.pose.position.x;
     currentY = msg->pose.pose.position.y;
-    
+
     if (!start_received)
     {
       startX = currentX;
@@ -210,91 +213,138 @@ private:
 
   void proxy_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    
+
     bool detected = msg->data;
-    
+
     RCLCPP_INFO(this->get_logger(), "SENSOR RAW: %s", detected ? "TRUE" : "FALSE");
-    
+
     sensor_obstacle = !detected;
-    
+
     RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", sensor_obstacle ? "STOP" : "GO");
-    
+
     std_msgs::msg::Bool out_msg;
     out_msg.data = msg->data;
     proxy_true_pub->publish(out_msg);
-    
+
     if (sensor_obstacle && !ignore_obstacle)
     {
-      
+
       if (current_state == MOVING_TO_TARGET)
       {
         previous_state_before_pause = current_state;
         current_state = PAUSED_STAGE1;
-        
+
         if (previous_state_before_pause == MOVING_TO_TARGET)
         {
           RCLCPP_INFO(this->get_logger(), "Stage 1 PAUSED");
         }
       }
     }
-    
+
     was_obstacle = sensor_obstacle;
   }
-  
-  double tof_distance = 0;
-  
-  void tof_callback(const std_msgs::msg::UInt16::SharedPtr msg)
-  {
-    uint16_t distance = msg->data;
-    
-    tof_distance = distance;
-    tof_valid = true;
-    
-    RCLCPP_DEBUG(this->get_logger(), "ToF distance: %u mm", distance);
-  }
+
+  // void proxy2_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  // {
+  //   bool detected2 = msg->data;
+
+  //   RCLCPP_INFO(this->get_logger(), "SENSOR2 RAW: %s", detected2 ? "TRUE" : "FALSE");
+
+  //   sensor_obstacle2 = !detected2;
+
+  //   RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", sensor_obstacle2 ? "NOT GRIPP" : "GRIPP");
+
+  // }
+
+
+  // double tof_distance = 0;
+
+  // void tof_callback(const std_msgs::msg::UInt16::SharedPtr msg)
+  // {
+  //   uint16_t distance = msg->data;
+
+  //   tof_distance = distance;
+  //   tof_valid = true;
+
+  //   RCLCPP_DEBUG(this->get_logger(), "ToF distance: %u mm", distance);
+  // }
 
   bool swing_unlock = false;
-  
+
   void swing_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if(msg->data)
+    if (msg->data)
     {
       swing_unlock = true;
       ignore_obstacle = true;
     }
   }
-  
+
   void coordinate_callback(const geometry_msgs::msg::Point::SharedPtr msg)
   {
-    
+
     if (!camera_active)
-    return;
+      return;
     yolo_errorX = msg->x;
     yolo_depth = msg->y;
     target = msg->z;
-    
+
     yolo_valid = (yolo_depth > 0.0);
-    
   }
 
-  
+  void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  {
+
+  }
+
+  void printGridDebug(
+    rclcpp::Logger logger,
+    int robot_cell,
+    int target_cell = -1
+)
+{
+    RCLCPP_INFO(logger, "GRID (3x4)");
+
+    for (int r = GRID_H - 1; r >= 0; r--)
+    {
+        std::string line;
+
+        for (int c = 0; c < GRID_W; c++)
+        {
+            int cell = r * GRID_W + c;
+
+            if (cell == robot_cell)
+                line += " [R]";
+            else if (cell == target_cell)
+                line += " [T]";
+            else
+                line += " " + std::to_string(cell);
+
+            if (cell < 10) line += " ";
+        }
+
+        RCLCPP_INFO(logger, "%s", line.c_str());
+    }
+}
+
+
   void control_loop()
   {
-      if (!start_received)
+    if (!start_received)
       return;
-      
-      if ((current_state == WAITING_FOR_TARGET || current_state == MOVING_TO_TARGET) && !target_received)
+
+    if ((current_state == WAITING_FOR_TARGET || current_state == MOVING_TO_TARGET) && !target_received)
       return;
-      
-      double currT = this->now().seconds();
-      float deltaT = currT - prevT;
-      prevT = currT;
-      
-      geometry_msgs::msg::Twist cmd;
-      
-      switch (current_state)
+
+    double currT = this->now().seconds();
+    float deltaT = currT - prevT;
+    prevT = currT;
+
+    geometry_msgs::msg::Twist cmd;
+
+    switch (current_state)
     {
-      case WAITING_FOR_TARGET:
+    case WAITING_FOR_TARGET:
       cmd.linear.x = 0.0;
       cmd.linear.y = 0.0;
       cmd.angular.z = 0.0;
@@ -319,7 +369,7 @@ private:
         break;
       }
 
-      if(!sensor_obstacle)
+      if (!sensor_obstacle)
       {
         ignore_obstacle = false;
       }
@@ -360,10 +410,10 @@ private:
           vy = vy / magnitude;
         }
 
-        cmd.linear.x = speed1 * vx;
-        cmd.linear.y = speed1 * vy;
-        // cmd.linear.x = control_distance *  std::cos(angle);
-        // cmd.linear.y = control_distance *  std::sin(angle);
+        // cmd.linear.x = speed1 * vx;
+        // cmd.linear.y = speed1 * vy;
+        cmd.linear.x = control_distance *  std::cos(angle);
+        cmd.linear.y = control_distance *  std::sin(angle);
         cmd.angular.z = 0.0;
         // cmd.angular.z = control_angle;
         RCLCPP_INFO(this->get_logger(), "move robot");
@@ -439,7 +489,7 @@ private:
         stage2_initiallized = true;
         RCLCPP_INFO(this->get_logger(), "STAGE2 STARTED (GRID PLANNER MODE)");
       }
-      
+
       double current_yaw = convertation(odom_robot_msg);
 
       switch (stage2_substate)
@@ -449,17 +499,24 @@ private:
       {
         int current_cell = planner.worldToGrid(currentX, currentY);
 
-        int target_cell;
+        int target_cell = -1;
         if (yolo_valid)
         {
           double target_world_x = currentX + yolo_depth * cos(current_yaw);
-
           double target_world_y = currentY + yolo_depth * sin(current_yaw);
+
           target_cell = planner.worldToGrid(target_world_x, target_world_y);
           last_known_target_cell = target_cell;
+
+          // RCLCPP_INFO(this->get_logger(),
+          //             "[ST2_PLAN YOLO] World(%.2f, %.2f) TargetWorld(%.2f, %.2f) Yaw=%.2f",
+          //             currentX, currentY,
+          //             target_world_x, target_world_y,
+          //             current_yaw);
         }
-        else if(last_known_target_cell != -1){
-          target_cell = last_known_target_cell; 
+        else if (last_known_target_cell != -1)
+        {
+          target_cell = last_known_target_cell;
         }
         else
         {
@@ -478,6 +535,13 @@ private:
 
         stage2_yaw = planner.cellToYaw(current_cell, next);
         stage2_substate = ST2_ROTATE;
+
+        printGridDebug(
+        this->get_logger(),
+        current_cell,
+        target_cell
+        );
+
 
         break;
       }
@@ -617,8 +681,10 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr boundingBox_sub;
   rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr tof_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr swing_sub;
+  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr waypoint_backend_sub;
   // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy_sub;
+  // rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy2_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr proxy_true_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
   // rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr next_step_pub;
@@ -630,7 +696,6 @@ private:
 };
 
 bool Movement::swing_reset_done = false;
-
 
 int main(int argc, char **argv)
 {

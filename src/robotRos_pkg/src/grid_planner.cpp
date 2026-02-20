@@ -1,4 +1,5 @@
 #include "grid_planner.hpp"
+#include <string>
 #include <cmath>
 
 int GridPlanner::worldToGrid(double x, double y)const
@@ -34,13 +35,18 @@ std::vector<int>GridPlanner::getNeightbors(int cell)const
 
 int GridPlanner::chooseNextCell(int current, int target)
 {
+
+    if(current < 0 || target < 0)
+        return current;
+
+
     auto neighbors = getNeightbors(current);
 
     double best_cost = 1e9;
     int best = -1;
 
     int tr = target / GRID_W; 
-    int tc = target & GRID_W;
+    int tc = target % GRID_W;
 
     for(int n : neighbors)
     {
@@ -78,6 +84,36 @@ double GridPlanner::cellToYaw(int from, int to)const
     if(tr > fr) return M_PI / 2.0;
     return -M_PI / 2.0;
 }
+
+// void printGridDebug(
+//     rclcpp::Logger logger,
+//     int robot_cell,
+//     int target_cell = -1
+// )
+// {
+//     RCLCPP_INFO(logger, "GRID(3x4)");
+
+//     for(int r = GRID_H - 1; r>=0; r--)
+//     {
+//         std::string line;
+
+//         for(int c = 0; c<GRID_W; c++)
+//         {
+//             int cell = r * GRID_W + c;
+
+//             if(cell == robot_cell)
+//                 line += "[R]";
+//             else if(cell == target_cell)
+//                 line += "[T]";
+//             else 
+//                 line += "" + std::to_string(cell);
+
+//             if(cell < 10) line += " ";
+//         }
+
+//         RCLCPP_INFO(logger, "%s", line.c_str());
+//     }
+// }
 
 void GridPlanner::reset()
 {
