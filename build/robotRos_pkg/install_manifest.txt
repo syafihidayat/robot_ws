@@ -1,0 +1,16 @@
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/lib/robotRos_pkg/robotRos_node
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/ament_index/resource_index/package_run_dependencies/robotRos_pkg
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/ament_index/resource_index/parent_prefix_path/robotRos_pkg
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/ament_prefix_path.sh
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/ament_prefix_path.dsv
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/path.sh
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/environment/path.dsv
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.bash
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.sh
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.zsh
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/local_setup.dsv
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/package.dsv
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/ament_index/resource_index/packages/robotRos_pkg
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/cmake/robotRos_pkgConfig.cmake
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/cmake/robotRos_pkgConfig-version.cmake
+/home/syafihidayat/Documents/robot_ws/install/robotRos_pkg/share/robotRos_pkg/package.xml

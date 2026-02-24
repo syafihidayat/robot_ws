@@ -51,8 +51,8 @@ public:
     // proxy2_sub = this->create_subscription<std_msgs::msg::Bool>("proxy2data", 10,
     //                                                             std::bind(&Movement::proxy2_callback, this, std::placeholders::_1));
 
-    boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
-                                                                           std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
+    // boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
+    //                                                                        std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
 
     // tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
     //                                                            std::bind(&Movement::tof_callback, this, std::placeholders::_1));
@@ -106,8 +106,8 @@ private:
     ST2_PLAN,
     ST2_ROTATE,
     ST2_MOVE,
-    ST2_CHECK_YOLO,
-    ST2_APPROACH,
+    // ST2_CHECK_YOLO,
+    // ST2_APPROACH,
     ST2_DONE
   };
 
@@ -130,8 +130,10 @@ private:
   State current_state;
   double prevT;
   bool ignore_obstacle = false;
-
+  
   bool stage2_initiallized = false;
+  double target_Astar_X,target_Astar_Y;
+  bool receive_waypoint_backend = false;
   bool rotating = false;
   double stage2_start_y = 0;
   double stage2_start_x = 0;
@@ -244,19 +246,6 @@ private:
     was_obstacle = sensor_obstacle;
   }
 
-  // void proxy2_callback(const std_msgs::msg::Bool::SharedPtr msg)
-  // {
-  //   bool detected2 = msg->data;
-
-  //   RCLCPP_INFO(this->get_logger(), "SENSOR2 RAW: %s", detected2 ? "TRUE" : "FALSE");
-
-  //   sensor_obstacle2 = !detected2;
-
-  //   RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", sensor_obstacle2 ? "NOT GRIPP" : "GRIPP");
-
-  // }
-
-
   // double tof_distance = 0;
 
   // void tof_callback(const std_msgs::msg::UInt16::SharedPtr msg)
@@ -280,52 +269,56 @@ private:
     }
   }
 
-  void coordinate_callback(const geometry_msgs::msg::Point::SharedPtr msg)
-  {
+  // void coordinate_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  // {
 
-    if (!camera_active)
-      return;
-    yolo_errorX = msg->x;
-    yolo_depth = msg->y;
-    target = msg->z;
+  //   if (!camera_active)
+  //     return;
+  //   yolo_errorX = msg->x;
+  //   yolo_depth = msg->y;
+  //   target = msg->z;
 
-    yolo_valid = (yolo_depth > 0.0);
-  }
+  //   yolo_valid = (yolo_depth > 0.0);
+  // }
 
   void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
   {
 
+    target_Astar_X = msg->x;
+    target_Astar_Y = msg->y;
+    receive_waypoint_backend = true;
+
   }
 
-  void printGridDebug(
-    rclcpp::Logger logger,
-    int robot_cell,
-    int target_cell = -1
-)
-{
-    RCLCPP_INFO(logger, "GRID (3x4)");
+//   void printGridDebug(
+//     rclcpp::Logger logger,
+//     int robot_cell,
+//     int target_cell = -1
+// )
+// {
+//     RCLCPP_INFO(logger, "GRID (3x4)");
 
-    for (int r = GRID_H - 1; r >= 0; r--)
-    {
-        std::string line;
+//     for (int r = GRID_H - 1; r >= 0; r--)
+//     {
+//         std::string line;
 
-        for (int c = 0; c < GRID_W; c++)
-        {
-            int cell = r * GRID_W + c;
+//         for (int c = 0; c < GRID_W; c++)
+//         {
+//             int cell = r * GRID_W + c;
 
-            if (cell == robot_cell)
-                line += " [R]";
-            else if (cell == target_cell)
-                line += " [T]";
-            else
-                line += " " + std::to_string(cell);
+//             if (cell == robot_cell)
+//                 line += " [R]";
+//             else if (cell == target_cell)
+//                 line += " [T]";
+//             else
+//                 line += " " + std::to_string(cell);
 
-            if (cell < 10) line += " ";
-        }
+//             if (cell < 10) line += " ";
+//         }
 
-        RCLCPP_INFO(logger, "%s", line.c_str());
-    }
-}
+//         RCLCPP_INFO(logger, "%s", line.c_str());
+//     }
+// }
 
 
   void control_loop()
@@ -487,46 +480,32 @@ private:
 
         stage2_substate = ST2_PLAN;
         stage2_initiallized = true;
-        RCLCPP_INFO(this->get_logger(), "STAGE2 STARTED (GRID PLANNER MODE)");
+        RCLCPP_INFO(this->get_logger(), "STAGE2 STARTED (GRID PLANNER/WAYPOINT MODE)");
       }
 
+      double dx2 = target_Astar_X - currentX;
+      double dy2 = target_Astar_Y - currentY;
+      double dist = std::sqrt(dx2 * dx2 + dy2 * dy2);
       double current_yaw = convertation(odom_robot_msg);
+
+      float control_distance2 = omni_distance.control_base(dist, deltaT);
 
       switch (stage2_substate)
       {
 
       case ST2_PLAN:
       {
-        int current_cell = planner.worldToGrid(currentX, currentY);
-
-        int target_cell = -1;
-        if (yolo_valid)
-        {
-          double target_world_x = currentX + yolo_depth * cos(current_yaw);
-          double target_world_y = currentY + yolo_depth * sin(current_yaw);
-
-          target_cell = planner.worldToGrid(target_world_x, target_world_y);
-          last_known_target_cell = target_cell;
-
-          // RCLCPP_INFO(this->get_logger(),
-          //             "[ST2_PLAN YOLO] World(%.2f, %.2f) TargetWorld(%.2f, %.2f) Yaw=%.2f",
-          //             currentX, currentY,
-          //             target_world_x, target_world_y,
-          //             current_yaw);
-        }
-        else if (last_known_target_cell != -1)
-        {
-          target_cell = last_known_target_cell;
-        }
-        else
-        {
+        if(!receive_waypoint_backend)
           break;
-        }
-        int next = planner.chooseNextCell(current_cell, target_cell);
 
-        if (next == current_cell)
+        int current_cell = planner.worldToGrid(currentX,currentY);
+        int target_cell = planner.worldToGrid(target_Astar_X,target_Astar_Y);
+
+        int next = planner.chooseNextCell(current_cell,target_cell);
+
+        if(next == current_cell)
         {
-          stage2_substate = ST2_CHECK_YOLO;
+          stage2_substate = ST2_DONE;
           break;
         }
 
@@ -536,12 +515,8 @@ private:
         stage2_yaw = planner.cellToYaw(current_cell, next);
         stage2_substate = ST2_ROTATE;
 
-        printGridDebug(
-        this->get_logger(),
-        current_cell,
-        target_cell
-        );
-
+        RCLCPP_INFO(this->get_logger(),   "[STAGE2][PLAN] current_cell=%d | next_cell=%d | target_cell=%d",
+            current_cell,next,target_cell);
 
         break;
       }
@@ -572,13 +547,13 @@ private:
 
       case ST2_MOVE:
       {
-        double dist = hypot(currentX - stage2_start_x,
-                            currentY - stage2_start_y);
+        double dist = hypot(currentX - stage2_start_x,currentY - stage2_start_y);
+        float control_distance2 = omni_distance.control_base((CELL_SIZE - dist), deltaT);
 
         if (dist < CELL_SIZE - 0.05)
         {
-          cmd.linear.x = 0.35 * cos(stage2_yaw);
-          cmd.linear.y = 0.35 * sin(stage2_yaw);
+          cmd.linear.x = control_distance2 * cos(stage2_yaw);
+          cmd.linear.y = control_distance2 * sin(stage2_yaw);
           cmd.angular.z = 0.0;
         }
         else
@@ -586,47 +561,9 @@ private:
           cmd.linear.x = 0.0;
           cmd.linear.y = 0.0;
 
-          stage2_substate = ST2_CHECK_YOLO;
-        }
-
-        break;
-      }
-
-      case ST2_CHECK_YOLO:
-      {
-        if (stage2_substate && yolo_depth < 0.6)
-        {
-          stage2_substate = ST2_APPROACH;
-          RCLCPP_INFO(this->get_logger(), "YOLO CLOSE -> APPROACH");
-        }
-        else
-        {
           stage2_substate = ST2_PLAN;
         }
 
-        break;
-      }
-
-      case ST2_APPROACH:
-      {
-        if (!yolo_valid)
-        {
-          stage2_substate = ST2_PLAN;
-          break;
-        }
-
-        if (yolo_depth > 0.25)
-        {
-          cmd.linear.x = 0.25;
-          cmd.angular.z = -0.4 * yolo_errorX;
-        }
-        else
-        {
-          cmd.linear.x = 0.0;
-          cmd.angular.z = 0.0;
-
-          stage2_substate = ST2_DONE;
-        }
         break;
       }
 
@@ -637,6 +574,7 @@ private:
         cmd.angular.z = 0.0;
 
         stage2_initiallized = false;
+        receive_waypoint_backend = false;
         current_state = TARGET_REACHED;
 
         RCLCPP_INFO(this->get_logger(), "STAGE2 COMPLETE");

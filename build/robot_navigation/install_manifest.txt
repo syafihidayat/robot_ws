@@ -1,0 +1,17 @@
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/launch/realsense_3d_map.launch.py
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/rviz/rgbd.rviz
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/ament_index/resource_index/package_run_dependencies/robot_navigation
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/ament_index/resource_index/parent_prefix_path/robot_navigation
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/ament_prefix_path.sh
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/ament_prefix_path.dsv
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/path.sh
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/environment/path.dsv
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.bash
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.sh
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.zsh
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/local_setup.dsv
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/package.dsv
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/ament_index/resource_index/packages/robot_navigation
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/cmake/robot_navigationConfig.cmake
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/cmake/robot_navigationConfig-version.cmake
+/home/syafihidayat/Documents/robot_ws/install/robot_navigation/share/robot_navigation/package.xml

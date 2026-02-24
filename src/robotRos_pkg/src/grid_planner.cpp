@@ -85,36 +85,6 @@ double GridPlanner::cellToYaw(int from, int to)const
     return -M_PI / 2.0;
 }
 
-// void printGridDebug(
-//     rclcpp::Logger logger,
-//     int robot_cell,
-//     int target_cell = -1
-// )
-// {
-//     RCLCPP_INFO(logger, "GRID(3x4)");
-
-//     for(int r = GRID_H - 1; r>=0; r--)
-//     {
-//         std::string line;
-
-//         for(int c = 0; c<GRID_W; c++)
-//         {
-//             int cell = r * GRID_W + c;
-
-//             if(cell == robot_cell)
-//                 line += "[R]";
-//             else if(cell == target_cell)
-//                 line += "[T]";
-//             else 
-//                 line += "" + std::to_string(cell);
-
-//             if(cell < 10) line += " ";
-//         }
-
-//         RCLCPP_INFO(logger, "%s", line.c_str());
-//     }
-// }
-
 void GridPlanner::reset()
 {
     last_cell = -1;

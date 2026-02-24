@@ -1,1 +1,15 @@
-/home/syafihidayat/Documents/robot_ws/src/lbringup/config/twist_mux.yaml
+twist_mux:
+  ros__parameters:
+    topics:
+      # defense:
+        # topic   : cmd_vel_defense
+        # timeout : 0.5
+        # priority: 25
+      navigation:
+        topic   : cmd_vel
+        timeout : 0.5
+        priority: 50
+      # game_pad  :
+      #   topic   : cmd_vel_joy
+      #   timeout : 0.5
+      #   priority: 100
