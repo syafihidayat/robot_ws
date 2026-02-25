@@ -5,6 +5,9 @@ from tkinter import END,messagebox
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point
+from std_msgs.msg import Int32MultiArray
+from gui_kfs_msgs.msg import KFSDecision
+
 GRID_ROWS = 4
 GRID_COLS = 3
 
@@ -17,13 +20,15 @@ class GridGUI(Node):
         self.robot_pos = {"KFS R1": [], "KFS R2": [], "KFS FAKE": []}
         self.active_robot = "KFS R1"
 
-        self.chase_pub = self.create_publisher(Point, 'chase_from_backend',10)
-        self.avoid_pub = self.create_publisher(Point, 'avoid_from_backend',10)
+        # self.chase_pub = self.create_publisher(Int32MultiArray, 'chase_from_backend',10)
+        # self.avoid_pub = self.create_publisher(Int32MultiArray, 'avoid_from_backend',10)
+
+        self.decision_pub = self.create_publisher(KFSDecision, "/kfs_decision", 10)
 
         # Window ttkbootstrap
-        self.root = tb.Window(themename="flatly")
+        self.root = tb.Window(themename="cosmo")
         self.root.title("Robot Grid Dashboard")
-        self.root.geometry("750x650")
+        self.root.geometry("640x640")
 
         self.buttons = []
         self.display_to_index = {}  # mapping display_number → index asli
@@ -149,34 +154,42 @@ class GridGUI(Node):
         self.decision_box.configure(state='normal')
         self.decision_box.delete('1.0',END)
 
-        all_filled = any(len(v) > 0 for v in self.robot_pos.values())
-        if not all_filled:
-            self.decision_box.insert(END, "Menunggu semua KFS ditempatkan...")
+        has_chase = len(self.robot_pos["KFS R2"]) > 0
+        has_avoid = len(self.robot_pos["KFS R1"]) > 0 or len(self.robot_pos["KFS FAKE"]) > 0
+
+        if not (has_chase or has_avoid):
+            self.decision_box.insert(END, "Menunggu KFS dipilih...")
+            self.decision_box.configure(state="disabled")
+            return
+
+        display_chase = [self.total_cells - 1 - i for i in self.robot_pos["KFS R2"]]
+        display_avoid = [self.total_cells - 1 - i for i in self.robot_pos["KFS R1"] + self.robot_pos["KFS FAKE"]]
+
+        #=====untuk tentukan mode nya====
+        if has_chase and has_avoid:
+            mode = 3 #mixed
+        elif has_chase:
+            mode = 1 #chase
+        elif has_avoid:
+            mode = 2 #avoid
         else:
-            # tampilkan angka sesuai display_number
-            display_chase = [self.total_cells - 1 - i for i in self.robot_pos["KFS R2"]]
-            display_avoid = [self.total_cells - 1 - i for i in self.robot_pos["KFS R1"] + self.robot_pos["KFS FAKE"]]
-            decision = {
-                "mode": "CHASE_KFS R2",
-                "chase": display_chase,
-                "avoid": display_avoid
-            }
-            self.decision_box.insert(END, str(decision))
+            mode = 0 #idle
 
-            print("publishing chase:", display_chase)
-            for i in display_chase:
-                msg = Point()
-                msg.x = float(i)
-                msg.y = 0.0
-                msg.z = 0.0
-                self.chase_pub.publish(msg)
+        msg = KFSDecision()
+        msg.mode = mode
+        msg.chase_targets = display_chase
+        msg.avoid_targets = display_avoid
 
-            for i in display_avoid:
-                msg = Point()
-                msg.x = float(i)
-                msg.y = 0.0
-                msg.z = 0.0
-                self.avoid_pub.publish(msg)
+        self.decision_pub.publish(msg)
+
+        decision = {
+            "mode" : mode,
+            "chase" : display_chase,
+            "avoid" : display_avoid
+        }
+
+        self.decision_box.insert(END, str(decision))
+        print("Publishing KFSDEcision: ", decision)
 
         self.decision_box.configure(state='disabled')
 

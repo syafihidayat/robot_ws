@@ -1,6 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "gui_kfs_msgs/msg/kfs_decision.hpp"
 #include <vector>
 #include <queue>
 #include <cmath>
@@ -30,16 +31,19 @@ class AStarTargetNode : public rclcpp::Node
 public:
   AStarTargetNode() : Node("a_star_target_node")
   {
-    chase_sub = this->create_subscription<geometry_msgs::msg::Point>("/chase_from_backend", 10,
-                                                                     std::bind(&AStarTargetNode::chase_callback, this, std::placeholders::_1));
+    // chase_sub = this->create_subscription<geometry_msgs::msg::Point>("/chase_from_backend", 10,
+    //                                                                  std::bind(&AStarTargetNode::chase_callback, this, std::placeholders::_1));
 
-    avoid_sub = this->create_subscription<geometry_msgs::msg::Point>("/avoid_from_backend", 10,
-                                                                     std::bind(&AStarTargetNode::avoid_callback, this, std::placeholders::_1));
+    // avoid_sub = this->create_subscription<geometry_msgs::msg::Point>("/avoid_from_backend", 10,
+    //                                                                  std::bind(&AStarTargetNode::avoid_callback, this, std::placeholders::_1));
 
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
                                                                   std::bind(&AStarTargetNode::odom_callback, this, std::placeholders::_1));
 
     waypoint_pub = this->create_publisher<geometry_msgs::msg::Point>("/planner/waypoint", 10);
+
+    decision_sub = this->create_subscription<gui_kfs_msgs::msg::KFSDecision>("/kfs_decision", 10,
+                                                                            std::bind(&AStarTargetNode::decision_callback, this, std::placeholders::_1));
 
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&AStarTargetNode::publish_waypoint, this));
 
@@ -53,8 +57,9 @@ public:
   }
 
 private:
-  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr chase_sub;
-  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr avoid_sub;
+  // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr chase_sub;
+  // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr avoid_sub;
+  rclcpp::Subscription<gui_kfs_msgs::msg::KFSDecision>::SharedPtr decision_sub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr waypoint_pub;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -72,24 +77,38 @@ private:
   size_t current_wp_ = 0;
 
   std::queue<Waypoint> target_queue_;
-
-  void chase_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+    
+  void index_to_grid(int index, int &gx, int &gy)
   {
-    Waypoint target{(int)std::round(msg->x / CELL_SIZE), (int)std::round(msg->y / CELL_SIZE)};
-    target_queue_.push(target);
-
-    RCLCPP_INFO(this->get_logger(), "Added chase target grid (%d,%d)", target.x, target.y);
-
-    if (path_.empty())
-      generate_path_to_target();
+    gx = index % grid_cols;
+    gy = index / grid_cols;
   }
 
-  void avoid_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  void decision_callback(const gui_kfs_msgs::msg::KFSDecision::SharedPtr msg)
   {
-    int gx = std::round(msg->x / CELL_SIZE);
-    int gy = std::round(msg->y / CELL_SIZE);
-    if (gx >= 0 && gx < grid_cols && gy >= 0 && gy < grid_rows)
-      grid_[gy][gx] = 1;
+    for (auto &row : grid_)
+      std::fill(row.begin(), row.end(), 0);
+
+    for (auto idx : msg->avoid_targets)
+    {
+      int gx,gy;
+      index_to_grid(idx,gx,gy);
+      if(gx >= 0 && gx < grid_cols && gy >= 0 && gy < grid_rows)
+        grid_[gy][gx] = 1;
+    }
+
+    while(!target_queue_.empty())
+      target_queue_.pop();
+
+    for(int idx : msg->chase_targets)
+    {
+      int gx,gy;
+      index_to_grid(idx,gx,gy);
+      target_queue_.push({gx, gy});
+
+    }
+
+    generate_path_to_target();
   }
 
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -106,15 +125,16 @@ private:
       startY = currentY;
       start_received = true;
     }
-
   }
+
 
   void generate_path_to_target()
   {
     if (target_queue_.empty())
       return;
 
-    if(!start_received) return;
+    if (!start_received)
+      return;
 
     Waypoint target = target_queue_.front();
     target_queue_.pop();
