@@ -16,13 +16,24 @@ enum Stage2State
     ST2_REACHED
 };
 
+enum ElevTransition
+{
+    LEVEL = 0,
+    UP ,
+    DOWN
+};
+
+
+
 struct GridPlanner
 {
+
     bool obstacle[CELL_COUNT] = {false};
 
     int last_cell = -1;
     int next_cell = -1;
     Stage2State state = ST2_PLAN;
+    ElevTransition getTransition(int from, int to);
 
     int worldToGrid(double x, double y)const;
     double cellToYaw(int from, int to)const;
@@ -32,7 +43,7 @@ struct GridPlanner
 
 
     void reset();
-
+    ElevTransition getElevation(int cell)const;
 
 };
 

@@ -22,3 +22,15 @@ gnome-terminal --tab --title="Camera" -- bash -c "source install/setup.bash;
                                                 ros2 run mehua_pkg mehua_cam;
                                                 echo Press any key to close;
                                                 read -n 1"
+
+
+gnome-terminal --tab --title="Gui KFS" -- bash -c "source install/setup.bash;
+                                                ros2 run gui_kfs_pkg gui_kfs;
+                                                echo Press any key to close;
+                                                read -n 1"
+
+
+gnome-terminal --tab --title="Path Planning" -- bash -c "source install/setup.bash;
+                                                ros2 run  astar_pkg astar_node;
+                                                echo Press any key to close;
+                                                read -n 1"

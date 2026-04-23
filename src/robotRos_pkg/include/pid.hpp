@@ -1,16 +1,15 @@
 #ifndef PID_H
 #define PID_H
 
-
 #include <math.h>
 
 class PID
 {
 private:
-    float min_val_,max_val_;
+    float min_val_, max_val_;
     float KP, KI, KD;
 
-    float kp,kpT,ki,kiT,kd,kdT;
+    float kp, kpT, ki, kiT, kd, kdT;
 
     float angular_vel_Prev;
 
@@ -21,7 +20,21 @@ private:
         float derivative;
         float u;
         float preveious;
-    }err;
+    } err;
+
+    struct heading_param
+    {
+        float kp;
+        float ki;
+        float kd;
+    } headingParams;
+
+    struct base_param
+    {
+        float kp;
+        float ki;
+        float kd;
+    } baseParams;
 
     float lowpass_filt = 0;
     float lowpass_prev = 0;
@@ -43,56 +56,77 @@ private:
     float prevError = 0;
 
 public:
+    void setBaseParam(float kp_, float ki_, float kd_)
+    {
+        baseParams.kp = kp_;
+        baseParams.ki = ki_;
+        baseParams.kd = kd_;
+    };
+
+    void setHeadingParam(float kp_, float ki_, float kd_)
+    {
+        headingParams.kp = kp_;
+        headingParams.ki = ki_;
+        headingParams.kd = kd_;
+    };
 
     void ppr_total(float total_ppr)
     {
-       PPR = total_ppr; 
-    }
-    
-    PID(float MIN_VAL, float MAX_VAL, float kp_, float ki_, float kd_):
-    min_val_(MIN_VAL),max_val_(MAX_VAL),
-    KP(kp_),
-    KI(ki_),
-    KD(kd_)
-    {
-
+        PPR = total_ppr;
     }
 
-    float control_base(float error , float deltaT)
+    float control_base(float error, float speed)
     {
         err.proportional = error;
-        err.integral += err.proportional * deltaT;
+        err.integral += err.proportional;
 
-        float eDerivative = (err.proportional - err.preveious) / deltaT;
+        float eDerivative = (err.proportional - err.preveious);
         err.preveious = err.proportional;
 
-        float u =  KP * err.proportional + KI * err.integral + KD * eDerivative ;
+        float u = baseParams.kp * err.proportional + baseParams.ki * err.integral + baseParams.kd * eDerivative;
+        //     float u = KP * err.proportional + KI * err.integral + KD * eDerivative;
 
-        return fmax(min_val_, fmin(u, max_val_));
 
+        return std::clamp(u, -speed, speed);
     }
 
-    float control_base_rotation(float error, float deltaT)
+    // float control_base(float error, float deltaT)
+    // {
+    //     err.proportional = error;
+    //     err.integral += err.proportional * deltaT;
+
+    //     float eDerivative = (err.proportional - err.preveious) / deltaT;
+    //     err.preveious = err.proportional;
+
+    //     float u = KP * err.proportional + KI * err.integral + KD * eDerivative;
+
+    //     return fmax(min_val_, fmin(u, max_val_));
+    // }
+
+    float control_base_rotation(float error, float speed)
     {
         err.proportional = error;
 
-        if(err.proportional > 180)
+        if (err.proportional > 180)
         {
             err.proportional -= 360;
         }
-        else if(err.proportional < -180)
+        else if (err.proportional < -180)
         {
             err.proportional += 360;
         }
-        err.integral += err.proportional * deltaT;
+        err.integral += err.proportional ;
+        // err.integral += err.proportional * deltaT;
 
-        float eDerivative = (err.proportional - err.preveious) / deltaT;
+        // float eDerivative = (err.proportional - err.preveious) / deltaT;
+        float eDerivative = (err.proportional - err.preveious) ;
         err.preveious = err.proportional;
 
-        float u = KP * err.proportional + KI * err.integral + KD * eDerivative;
+        float uT = headingParams.kp * err.proportional + headingParams.ki * err.integral + headingParams.kd * eDerivative;
+        // float u = KP * err.proportional + KI * err.integral + KD * eDerivative;
 
-        return fmax(min_val_, fmin(u, max_val_));
-
+        // return fmax(min_val_, fmin(u, max_val_));
+        return std::clamp(uT, -speed, speed);
     }
 
     float get_filt_vel()

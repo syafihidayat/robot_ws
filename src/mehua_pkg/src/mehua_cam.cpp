@@ -9,6 +9,8 @@
 #include <filesystem>
 #include "mehua_pkg/utils.h"
 #include "mehua_pkg/yolov8Predictor.h"
+#include "mehua_pkg_msgs/msg/kfs_detection.hpp"
+#include "mehua_pkg_msgs/msg/kfs_detection_array.hpp"
 
 #define CLASS_FALSE 0
 #define CLASS_TRUE 1
@@ -81,7 +83,7 @@ public:
       return;
     }
 
-    boundingBox_pub = this->create_publisher<geometry_msgs::msg::Point>("coordinate_boundingBox", 10);
+    kfs_pub = this->create_publisher<mehua_pkg_msgs::msg::KFSDetectionArray>("kfs_detections", 10);
 
     timer_ = this->create_wall_timer(std::chrono::milliseconds(33), std::bind(&DetectionPublish::detectionLoop, this));
 
@@ -93,13 +95,13 @@ public:
 
 private:
 
-  bool target_locked = false;
-  float locked_cx = 0.0f;
-  float locked_cy = 0.0f;
-  int lost_count = 0;
+  // bool target_locked = false;
+  // float locked_cx = 0.0f;
+  // float locked_cy = 0.0f;
+  // int lost_count = 0;
 
-  const float MAX_JUMP = 80.0f;
-  const int LOST_THRESHOLD = 5;
+  // const float MAX_JUMP = 80.0f;
+  // const int LOST_THRESHOLD = 5;
 
 
   void detectionLoop()
@@ -129,15 +131,20 @@ private:
 
     std::vector<Yolov8Result> result = predictor->predict(frame);
 
-    bool target_found = false;
-    Yolov8Result best_real;
-    float min_depth = 999.0f;
-    float best_cx = 0, best_cy = 0;
+    // bool target_found = false;
+    // Yolov8Result best_real;
+    // float min_depth = 999.0f;
+    // float best_cx = 0, best_cy = 0;
+    mehua_pkg_msgs::msg::KFSDetectionArray array_msg;
+    array_msg.header.stamp = this->now();
+    array_msg.header.frame_id = "camera";
+
+    int id_counter = 0;
 
     for (const auto &res : result)
     {
-      if (res.classId != CLASS_TRUE)
-        continue;
+      // if (res.classId != CLASS_TRUE)
+      //   continue;
 
       float cx = res.box.x + res.box.width * 0.5f;
       float cy = res.box.y + res.box.height * 0.5f;
@@ -147,96 +154,116 @@ private:
       if (depth < 0.1f || depth > 2.0f)
         continue;
 
-      if (target_locked)
-      {
-        float dist = std::hypot(cx - locked_cx, cy - locked_cy);
+      mehua_pkg_msgs::msg::KFSDetection det;
+      det.id = id_counter++;
+      det.kfs_type = res.classId;
+      det.x = cx;
+      det.y = cy;
+      det.confidence = res.conf;
 
-        if (dist < MAX_JUMP)
-        {
-          best_real = res;
-          best_cx = cx;
-          best_cy = cy;
-          min_depth = depth;
-          target_found = true;
-          break;
-        }
-      }
+      array_msg.detections.push_back(det);
 
-      else
-      {
-        if (depth < min_depth)
-        {
-          best_real = res;
-          best_cx = cx;
-          best_cy = cy;
-          min_depth = depth;
-          target_found = true;
-        }
-      }
+      cv::rectangle(frame,cv::Rect(res.box.x, res.box.y,res.box.width, res.box.height),cv::Scalar(0, 255, 0), 2);
+
+      cv::circle(frame, cv::Point(cx, cy),5,cv::Scalar(0, 255, 0), -1);
+
     }
-
-    utils::visualizeDetection(frame, result, classNames);
-
-    geometry_msgs::msg::Point msg;
-
-    if (!target_found)
-    {
-
-      lost_count++;
-      if(lost_count > LOST_THRESHOLD)
-      {
-        target_locked = false;
-      }
-
-      msg.x = 0;
-      msg.y = -1;
-      msg.z = 0;
-      boundingBox_pub->publish(msg);
-
-      cv::putText(frame, "NO TRUE TARGET", cv::Point(450, 360), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 3);
-      cv::imshow("YOLO CAM", frame);
-      cv::waitKey(1);
-      return;
-    }
-
-    float img_cx = frame.cols / 2.0f;
-    float error_x = best_cx - img_cx;
-
-    lost_count = 0;
-    target_locked = true;
-    // locked_target = best;
-    locked_cx = best_cx;
-    locked_cy = best_cy;
-
-    msg.x = error_x;
-    msg.y = min_depth;
-    msg.z = best_real.conf;
-    boundingBox_pub->publish(msg);
-
-    auto bbox = best_real.box;
-
-    cv::rectangle(frame,
-                  cv::Rect(bbox.x, bbox.y, bbox.width, bbox.height),
-                  cv::Scalar(0, 255, 0), 3);
-
-    cv::circle(frame, cv::Point(best_cx, best_cy), 6, cv::Scalar(0, 255, 0), -1);
-
-    cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows),
-             cv::Scalar(255, 0, 0), 1);
-
-    std::string info = "ERR_X: " + std::to_string((int)error_x) + "  DEPTH: " + std::to_string(min_depth);
-
-    cv::putText(frame, info, cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX,
-                0.8, cv::Scalar(0, 255, 255), 2);
-
-    cv::imshow("YOLO CAM", frame);
+    kfs_pub->publish(array_msg);    
+    utils::visualizeDetection(frame,result,classNames);
+    
+    cv::imshow("yolo cam", frame);
     cv::waitKey(1);
+
+    //   if (target_locked)
+    //   {
+    //     float dist = std::hypot(cx - locked_cx, cy - locked_cy);
+
+    //     if (dist < MAX_JUMP)
+    //     {
+    //       best_real = res;
+    //       best_cx = cx;
+    //       best_cy = cy;
+    //       min_depth = depth;
+    //       target_found = true;
+    //       break;
+    //     }
+    //   }
+
+    //   else
+    //   {
+    //     if (depth < min_depth)
+    //     {
+    //       best_real = res;
+    //       best_cx = cx;
+    //       best_cy = cy;
+    //       min_depth = depth;
+    //       target_found = true;
+    //     }
+    //   }
+    // }
+
+    // utils::visualizeDetection(frame, result, classNames);
+
+    // geometry_msgs::msg::Point msg;
+
+    // if (!target_found)
+    // {
+
+    //   lost_count++;
+    //   if(lost_count > LOST_THRESHOLD)
+    //   {
+    //     target_locked = false;
+    //   }
+
+    //   msg.x = 0;
+    //   msg.y = -1;
+    //   msg.z = 0;
+    //   boundingBox_pub->publish(msg);
+
+    //   cv::putText(frame, "NO TRUE TARGET", cv::Point(450, 360), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 3);
+    //   cv::imshow("YOLO CAM", frame);
+    //   cv::waitKey(1);
+    //   return;
+    // }
+
+    // float img_cx = frame.cols / 2.0f;
+    // float error_x = best_cx - img_cx;
+
+    // lost_count = 0;
+    // target_locked = true;
+    // // locked_target = best;
+    // locked_cx = best_cx;
+    // locked_cy = best_cy;
+
+    // msg.x = error_x;
+    // msg.y = min_depth;
+    // msg.z = best_real.conf;
+    // boundingBox_pub->publish(msg);
+
+    // auto bbox = best_real.box;
+
+    // cv::rectangle(frame,
+    //               cv::Rect(bbox.x, bbox.y, bbox.width, bbox.height),
+    //               cv::Scalar(0, 255, 0), 3);
+
+    // cv::circle(frame, cv::Point(best_cx, best_cy), 6, cv::Scalar(0, 255, 0), -1);
+
+    // cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows),
+    //          cv::Scalar(255, 0, 0), 1);
+
+    // std::string info = "ERR_X: " + std::to_string((int)error_x) + "  DEPTH: " + std::to_string(min_depth);
+
+    // cv::putText(frame, info, cv::Point(20, 40), cv::FONT_HERSHEY_SIMPLEX,
+    //             0.8, cv::Scalar(0, 255, 255), 2);
+
+    // cv::imshow("YOLO CAM", frame);
+    // cv::waitKey(1);
   }
 
   std::unique_ptr<YOLOPredictor> predictor;
   std::vector<std::string> classNames;
   rs2::pipeline pipe;
-  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr boundingBox_pub;
+  rclcpp::Publisher<mehua_pkg_msgs::msg::KFSDetectionArray>::SharedPtr kfs_pub;
   rclcpp::TimerBase::SharedPtr timer_;
   bool is_initialized;
 };

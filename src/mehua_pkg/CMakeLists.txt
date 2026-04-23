@@ -15,6 +15,7 @@ find_package(std_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(realsense2 REQUIRED)
+find_package(mehua_pkg_msgs REQUIRED)
 
 #ONNX Runtime
 set(ONNXRUNTIME_DIR "/home/syafihidayat/Documents/onnxruntime-linux-x64-1.21.0")
@@ -44,6 +45,7 @@ ament_target_dependencies(mehua_cam
   geometry_msgs
   cv_bridge
   image_transport
+  mehua_pkg_msgs
 )
 
 install(TARGETS mehua_cam

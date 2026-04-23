@@ -14,6 +14,7 @@ find_package(std_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(gui_kfs_msgs REQUIRED)
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -22,6 +23,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 add_executable(robotRos_node 
   src/robotRos_node.cpp
   src/grid_planner.cpp)
+
 
 target_include_directories(robotRos_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -37,6 +39,7 @@ ament_target_dependencies(robotRos_node
   visualization_msgs
   tf2
   tf2_geometry_msgs
+  gui_kfs_msgs
 )
 
 install(TARGETS robotRos_node

@@ -14,6 +14,7 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(gui_kfs_msgs REQUIRED)
+find_package(mehua_pkg_msgs REQUIRED)
 
 # ========================
 # Build node
@@ -30,6 +31,7 @@ ament_target_dependencies(astar_node
   geometry_msgs
   nav_msgs
   gui_kfs_msgs
+  mehua_pkg_msgs
 )
 
 target_compile_features(astar_node PUBLIC cxx_std_17)

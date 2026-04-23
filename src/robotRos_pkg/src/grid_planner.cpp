@@ -2,11 +2,34 @@
 #include <string>
 #include <cmath>
 
+static constexpr int height_map[GRID_H][GRID_W]=
+{
+    {20, 40, 20},
+    {40, 60, 40},
+    {60, 40, 20},
+    {40, 20, 40}
+};
+
+ElevTransition getTransition(int from, int to)
+{
+    int fr = from / GRID_W;
+    int fc = from % GRID_W;
+    int tr = to / GRID_W;
+    int tc = to % GRID_W;
+
+    int dh = height_map[tr][tc] - height_map[fr][fc];
+
+    if(dh > 0) return UP;
+    if(dh < 0) return DOWN;
+    return LEVEL;
+
+}
+
 int GridPlanner::worldToGrid(double x, double y)const
 {
     const double CELL_SIZE = 1.0;
-    const double ORIGIN_X = -1.5;
-    const double ORIGIN_Y = -2.0;
+    const double ORIGIN_X = 2.0;
+    const double ORIGIN_Y = 0.5;
 
 
     int col = (int)((x - ORIGIN_X) / CELL_SIZE);
@@ -48,6 +71,9 @@ int GridPlanner::chooseNextCell(int current, int target)
     int tr = target / GRID_W; 
     int tc = target % GRID_W;
 
+    int cr = current / GRID_W;
+    int cc = current % GRID_W;
+
     for(int n : neighbors)
     {
         if(obstacle[n])continue;
@@ -57,6 +83,13 @@ int GridPlanner::chooseNextCell(int current, int target)
         int nc = n % GRID_W;
 
         double cost = std::abs(tr - nr) + std::abs(tc - nc);
+
+        int dh = height_map[nr][nc] - height_map[cr][cc];
+
+        if(dh > 0)
+            cost += dh * 0.2;
+        else if(dh < 0)
+            cost += std::abs(dh) * 0.05;
 
         if(cost < best_cost)
         {
