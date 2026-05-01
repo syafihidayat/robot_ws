@@ -18,12 +18,19 @@ public:
       "/infraReceive", 10,
       std::bind(&waypointPublish::ir_callback, this, std::placeholders::_1));
 
-    lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
+    // lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
+
+    toStage2_pub = this->create_publisher<std_msgs::msg::Bool>("toStage2", 10);
 
     waypoint = {
-      {0.2, 1.0},
-      {1.1, 1.0},
-      {2.0, -0.4}
+
+      {0.2, 0.0}
+      // {0.0, 1.0}
+
+      // {0.2, 1.0},
+      // {1.1, 1.0},
+      // {2.0, -0.63}
+      // {3.0, -0.6}
     };
 
     current_waypoint_index = 0;
@@ -49,6 +56,7 @@ private:
   bool waiting_ir = false;
   bool reached_latched = false;
   bool all_completed = false;
+  bool stage2_sent = false;
 
   size_t current_waypoint_index;
 
@@ -72,10 +80,7 @@ private:
 
     reached_latched = false;
 
-    RCLCPP_INFO(this->get_logger(),
-                "Sending waypoint %ld (%.2f, %.2f)",
-                current_waypoint_index,
-                point.x, point.y);
+    RCLCPP_INFO(this->get_logger(),"Sending waypoint %ld (%.2f, %.2f)",current_waypoint_index,point.x, point.y);
   }
 
   // ===================== ADVANCE (ONLY ONE ENTRY POINT) =====================
@@ -116,14 +121,26 @@ private:
       waiting_ir = true;
 
       RCLCPP_INFO(this->get_logger(), "WAITING IR...");
-      return; // STOP HERE, DO NOT INCREMENT
+      return; 
     }
+
+    // if(current_waypoint_index == 2 && !stage2_sent)
+    // {
+
+    //   stage2_sent = true;
+
+    //   std_msgs::msg::Bool stage2_msg;
+    //   stage2_msg.data = true;
+    //   toStage2_pub->publish(stage2_msg);
+
+    //   RCLCPP_INFO(this->get_logger(), "ENTRY STAGE2 - CHANGE SPEED");
+
+    // }
 
     // WP lainnya langsung lanjut
     advance_waypoint();
   }
 
-  // ===================== IR CALLBACK =====================
   void ir_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if (all_completed) return;
@@ -137,14 +154,22 @@ private:
     advance_waypoint();
   }
 
-  // ===================== VARIABLES =====================
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pose_pub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ir_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr toStage2_pub;
 
   std::vector<std::pair<double, double>> waypoint;
 };
+
+int main(int argc, char **argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<waypointPublish>());
+  rclcpp::shutdown();
+  return 0;
+}
 
 
 // class waypointPublish : public rclcpp::Node

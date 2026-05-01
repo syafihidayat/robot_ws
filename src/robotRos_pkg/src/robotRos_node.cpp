@@ -12,20 +12,6 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 
-// #define PWM_MAX 3.0  // 1.5
-// #define PWM_MIN -3.0 // 1.5
-
-// #define kp 1.0   //0.8 // 1.0
-// #define ki 0.001
-// #define kd 0.0
-
-// #define kpT 1.5
-// #define kiT 0.0
-// #define kdT 0.0
-
-// PID omni_distance(PWM_MIN, PWM_MAX, kp, ki, kd);
-// PID omni_angular(PWM_MIN, PWM_MAX, kpT, kiT, kdT);
-
 GridPlanner planner;
 PID omni_distance;
 PID omni_angular;
@@ -57,8 +43,14 @@ public:
     toStage2_sub = this->create_subscription<std_msgs::msg::Bool>("toStage2", 10,
     std::bind(&Movement::toStage2_callback, this, std::placeholders::_1));
 
+    after_climb_sub = this->create_subscription<std_msgs::msg::Bool>("afterClimb", 10,
+    std::bind(&Movement::after_climb_callback, this, std::placeholders::_1));
+
     // boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
     //                                                                        std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
+
+    limit_stage2_sub = this->create_subscription<std_msgs::msg::Bool>("limitdata", 10,
+    std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
 
     tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
     std::bind(&Movement::tof_callback, this, std::placeholders::_1));
@@ -75,6 +67,7 @@ public:
 
     proxy_true_pub = this->create_publisher<std_msgs::msg::Bool>("/true_sensor_proxy", 10);
 
+
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::control_loop, this));
 
     start_received = false;
@@ -84,9 +77,8 @@ public:
 
     float kp, ki, kd;
     float kpT, kiT, kdT;
-    // float desired_linear_vel, max_angular_vel;
 
-    this->declare_parameter("kp", 1.0);
+    this->declare_parameter("kp", 0.70);
     this->declare_parameter("ki", 0.0);
     this->declare_parameter("kd", 0.0);
 
@@ -119,7 +111,6 @@ public:
   }
 
 private:
-  static bool swing_reset_done;
 
   enum State
   {
@@ -127,6 +118,10 @@ private:
     MOVING_TO_TARGET,
     TARGET_REACHED,
     PAUSED_STAGE1,
+    STRAIGHT_FOR_CLIMB,
+    AFTER_CLIMB,
+    STOP_SENSOR,
+    POST_CLIMB_MOVE,
     STAGE2_MOVE_STEPbSTEP
   };
 
@@ -153,7 +148,7 @@ private:
   float desired_linear_vel, max_angular_vel;
 
   int stage1_target_count = 0;
-  int stage1_targets_total = 3;
+  int stage1_targets_total = 1;
   bool stage1_completed = false;
 
   bool camera_active = false;
@@ -162,6 +157,8 @@ private:
   double startX, startY;
   double targetX, targetY;
   double currentX, currentY;
+  double start_x_after_climb;
+  double start_y_after_climb;
   bool start_received;
   bool target_received;
   bool sensor_obstacle = false;
@@ -173,11 +170,15 @@ private:
   bool ignore_obstacle = false;
   bool target_reached_flag = false;
   bool paused = false;
-  bool just_resumed = false;
+  // bool just_resumed = false;
+  bool start_saved = false;
+  double stop_time = 0;
+  bool stop_initialize = false;
 
 
 
   bool stage2_initiallized = false;
+  bool stage2_triggred = false;
   double target_Astar_X, target_Astar_Y;
   bool receive_waypoint_backend = false;
   bool rotating = false;
@@ -247,25 +248,17 @@ private:
 
   void pose_callback(const geometry_msgs::msg::Point::SharedPtr msg)
   {
-    if (current_state == WAITING_FOR_TARGET || current_state == TARGET_REACHED)
-    {
-    // if(!target_received)
-    // {
+    // if (current_state != WAITING_FOR_TARGET)
+    //   return;
+    
       targetX = msg->x;
       targetY = msg->y;
       target_received = true;
       target_reached_flag = false;
-      // paused = false;
-      
-      // std_msgs::msg::Bool reached_msg;
-      // reached_msg.data = false;
-      // reached_pub->publish(reached_msg);
-      
-      current_state = MOVING_TO_TARGET;
 
       RCLCPP_INFO(this->get_logger(), "New target STAGE1 received: (%.2f, %.2f)", targetX, targetY);
       RCLCPP_INFO(this->get_logger(), "Current position: (%.2f, %.2f)", currentX, currentY);
-    }
+    
   }
 
   bool last_detected = false;
@@ -378,7 +371,6 @@ private:
     if(msg->data)
     {
       stage2_flag = true;
-      // RCLCPP_INFO(this->get_logger(), "LIMIT TOUCHED");
     }
   }
 
@@ -420,13 +412,29 @@ private:
 
   }
 
+  void limit_stage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if(msg->data)
+    {
+      current_state = STOP_SENSOR;
+    }
+  }
+
+  void after_climb_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if(msg->data && current_state == STRAIGHT_FOR_CLIMB)
+    {
+      current_state = AFTER_CLIMB;
+    }
+  }
+
   void control_loop()
   {
     if (!start_received)
       return;
 
-    if ((current_state == WAITING_FOR_TARGET || current_state == MOVING_TO_TARGET) && !target_received)
-      return;
+    // if ((current_state == WAITING_FOR_TARGET || current_state == MOVING_TO_TARGET) && !target_received)
+    //   return;
     // if (!target_received || current_state == MOVING_TO_TARGET)
     //   return;
 
@@ -497,14 +505,28 @@ private:
       // RCLCPP_INFO(this->get_logger(), "posisi y", currentY);
 
 
-      if (distance > 0.04)
+      if (distance > 0.03)
       {
-          cmd.linear.x = 0.2 * std::cos(angle);
-          cmd.linear.y = controlled_distance * std::sin(angle);
-          cmd.angular.z = -controlled_angle;
-          RCLCPP_INFO(this->get_logger(), "move robot");
 
-        // }
+          // if(stage2_flag)
+          // {
+
+          //   cmd.linear.x = controlled_distance * std::cos(angle);
+          //   cmd.linear.y = controlled_distance * std::sin(angle);
+          //   cmd.angular.z = -controlled_angle;
+          //   RCLCPP_INFO(this->get_logger(), "move robot stage2");
+
+          // }
+          // else
+          // {
+
+            // cmd.linear.x = 0.2 * std::cos(angle);
+            cmd.linear.x = controlled_distance * std::cos(angle);
+            cmd.linear.y = controlled_distance * std::sin(angle);
+            cmd.angular.z = -controlled_angle;
+            RCLCPP_INFO(this->get_logger(), "move robot");
+
+          // }        
       }
       else
       {
@@ -535,6 +557,8 @@ private:
             stage1_completed = true;
             stage1_complated_for_camera = true;
             camera_active = true;
+
+            current_state = STRAIGHT_FOR_CLIMB;
 
             stage1_target_count = 0;
             target_received = false;
@@ -572,14 +596,13 @@ private:
         paused = false;
         lifter_down2_flag = false;
 
-        just_resumed = true;
+        // just_resumed = true;
 
         current_state = previous_state_before_pause;
         // current_state = MOVING_TO_TARGET;
         target_reached_flag = false;
         RCLCPP_INFO(this->get_logger(), "Resuming from pause");
         // swing_reset_done = false;
-        // ignore_obstacle = false;
       }
       else
       {
@@ -587,7 +610,91 @@ private:
         RCLCPP_INFO(this->get_logger(), " PAUSED - Waiting for obstacle to clear...");
       }
     }
+    break;
+
+    case STRAIGHT_FOR_CLIMB:
+    {
+      cmd.linear.x = 0.8;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = -controlled_angle;
+
+      RCLCPP_INFO(this->get_logger(), "STRAIGHT MODE - jalan lurus");
+
       break;
+    }
+
+    case AFTER_CLIMB:
+    {
+      cmd.linear.x = 0.3;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = -controlled_angle;
+
+      RCLCPP_INFO(this->get_logger(), "LIFTER TURUN MASUK KE MODE PELAN");
+
+      break;
+    }
+
+    case STOP_SENSOR:
+    {
+      cmd.linear.x = 0.0;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = 0.0;
+      // cmd.angular.z = -controlled_angle;
+
+      RCLCPP_INFO(this->get_logger(), "STOP sensor WAITING LIFTER");
+
+      
+      if(!stop_initialize)
+      {
+        stop_time = this->now().seconds();
+        stop_initialize = true;
+      }
+
+
+      // if(!start_saved)
+      if(this->now().seconds() - stop_time > 2.0)
+      {
+        start_x_after_climb = currentX;
+        start_y_after_climb = currentY;
+
+        start_saved = true;
+  
+        current_state = POST_CLIMB_MOVE;
+      }
+
+
+      break;
+
+    }
+
+    case POST_CLIMB_MOVE:
+    {
+
+      double dx = currentX - start_x_after_climb;
+      double dy = currentY - start_y_after_climb;
+      double dist = sqrt(dx*dx + dy*dy);
+
+      if(dist < 0.3)
+      {
+        cmd.linear.x = 0.3;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+      }
+      else
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = -controlled_angle;
+
+        current_state = WAITING_FOR_TARGET;
+        start_saved = false;
+      }
+
+
+      break;
+
+    }
+
 
       // ================================================STAGE 2====================================================
 
@@ -712,11 +819,12 @@ private:
       cmd.linear.y = 0.0;
       cmd.angular.z = -controlled_angle;
 
-      if (stage1_completed)
+      if (stage1_completed && !stage2_triggred)
       {
+
+        stage2_triggred = true;
         // current_state = STAGE2_MOVE_STEPbSTEP;
         stage1_completed = false; // ✅ RESET FLAG
-        // current_block = 1;
         RCLCPP_INFO(this->get_logger(), "STARTING STAGE 2 - Step by Step Movement");
         RCLCPP_INFO(this->get_logger(), "=============================================");
       }
@@ -746,6 +854,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr waypoint_backend_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr infraReceive_sub;
   rclcpp::Subscription<gui_kfs_msgs::msg::KFSDecision>::SharedPtr gui_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_stage2_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr after_climb_sub;
   // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr toStage2_sub;
@@ -756,7 +866,7 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
 };
 
-bool Movement::swing_reset_done = false;
+// bool Movement::swing_reset_done = false;
 
 int main(int argc, char **argv)
 {

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <algorithm>
 
+
 struct Waypoint
 {
   int x;

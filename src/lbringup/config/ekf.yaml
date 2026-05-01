@@ -1,5 +1,6 @@
 ekf_filter_node:
     ros__parameters:
+        # frequency: 10.0
         frequency: 50.0
         two_d_mode: true
         publish_tf: true
@@ -41,4 +42,4 @@ ekf_filter_node:
         #               false, false, false,
         #               false, false, false,
         #               false, false, true,
-        #               false, false, false]
+        #               true, false, false]
