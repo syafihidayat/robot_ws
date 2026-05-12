@@ -1,6 +1,6 @@
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
-from tkinter import END,messagebox
+from tkinter import END, messagebox
 
 import rclpy
 from rclpy.node import Node
@@ -8,32 +8,29 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import Int32MultiArray
 from gui_kfs_msgs.msg import KFSDecision
 from mehua_pkg_msgs.msg import KFSDetectionArray
+from std_msgs.msg import Bool
 
 GRID_ROWS = 4
 GRID_COLS = 3
 
 class GridGUI(Node):
     def __init__(self):
-
         super().__init__('grid_gui_node')
         
-        # posisi robot
+        # posisi robot dalam indeks asli (0..11, baris-mayor)
         self.robot_pos = {"KFS R1": [], "KFS R2": [], "KFS FAKE": []}
         self.active_robot = "KFS R1"
 
-        # self.chase_pub = self.create_publisher(Int32MultiArray, 'chase_from_backend',10)
-        # self.avoid_pub = self.create_publisher(Int32MultiArray, 'avoid_from_backend',10)
-
         self.decision_pub = self.create_publisher(KFSDecision, "/kfs_decision", 10)
-        self.detection_yolo_sub = self.create_subscription(KFSDetectionArray, "/kfs_detections",self.KFSDetection_callback, 10)
+        self.goal_reached_sub = self.create_subscription(Bool,"/goal_reached", self.goal_reached_callback, 10 )
+        self.detection_yolo_sub = self.create_subscription(KFSDetectionArray, "/kfs_detections", self.KFSDetection_callback, 10)
 
-        # Window ttkbootstrap
+        # Window
         self.root = tb.Window(themename="cosmo")
         self.root.title("Robot Grid Dashboard")
         self.root.geometry("640x640")
 
-        self.buttons = []
-        self.display_to_index = {}  # mapping display_number → index asli
+        self.buttons = []  # list tombol sesuai indeks asli
 
         self.has_kfs = False
         self.latest_detection = None
@@ -41,8 +38,11 @@ class GridGUI(Node):
         self.build_gui()
         self.update_decision()
 
-        self.root.after(100,self.ros_spin)
+        self.root.after(100, self.ros_spin)
         self.root.after(50, self.update_from_yolo)
+
+        self.robot_actual_pos = None
+        self.chase_sent = []
 
     def ros_spin(self):
         rclpy.spin_once(self, timeout_sec=0)
@@ -80,21 +80,19 @@ class GridGUI(Node):
             self.robot_buttons[r] = btn
             self.robot_counters[r] = counter
 
-        # Grid frame
+        # Grid frame - tanpa mirroring, indeks asli 0..11
         grid_frame = tb.Frame(self.root)
         grid_frame.pack(pady=20)
 
         self.total_cells = GRID_ROWS * GRID_COLS
-        for i in range(self.total_cells):
-            display_number = self.total_cells - 1 - i
+        for idx in range(self.total_cells):
             btn = tb.Button(grid_frame,
-                            text=str(display_number),
+                            text=str(idx),
                             bootstyle="secondary",
                             padding=(25,25),
-                            command=lambda x=display_number: self.toggle_robot(x))
-            btn.grid(row=i//GRID_COLS, column=i%GRID_COLS, padx=8, pady=8)
+                            command=lambda i=idx: self.toggle_robot(i))
+            btn.grid(row=idx // GRID_COLS, column=idx % GRID_COLS, padx=8, pady=8)
             self.buttons.append(btn)
-            self.display_to_index[display_number] = i
 
         # Clear All button
         tb.Button(self.root, text="Hapus Semua", bootstyle="danger",
@@ -115,27 +113,41 @@ class GridGUI(Node):
             else:
                 btn.configure(bootstyle="secondary")
 
+    def goal_reached_callback(self, msg):
+        if msg.data:
+            self.send_stop()
+
+    def send_stop(self):
+        stop_msg = KFSDecision()
+        stop_msg.mode = 0
+        stop_msg.chase_targets = []
+        stop_msg.avoid_targets = []
+        self.decision_pub.publish(stop_msg)
+
+        self.decision_box.configure(state='normal')
+        self.decision_box.delete('1.0', END)
+        self.decision_box.insert(END, "✅ ROBOT SAMPAI — STOP dikirim otomatis")
+        self.decision_box.configure(state='disabled')
+        print("Auto-stop sent: goal reached")
+
     def KFSDetection_callback(self, msg: KFSDetectionArray):
         if not msg.detections:
             self.has_kfs = False
             return
-
         det = max(msg.detections, key=lambda d: d.confidence)
-
         self.latest_detection = det
         self.has_kfs = True
 
     def update_from_yolo(self):
         if self.has_kfs and self.latest_detection is not None:
             det = self.latest_detection
-            self.update_kfs_marker(det.x,det.y,det.kfs_type)
+            # jika perlu menampilkan marker KFS di grid, implementasikan di sini
+            # self.update_kfs_marker(det.x, det.y, det.kfs_type)
+            pass
+        self.root.after(50, self.update_from_yolo)
 
-        self.root.after(50,self.update_from_yolo)
-
-    def toggle_robot(self, display_number):
-        """Jika cell kosong, tempatkan robot, jika sudah ada robot, hapus robot."""
-        index = self.display_to_index[display_number]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
-
+    def toggle_robot(self, index):
+        """index adalah indeks asli tombol (0..11)"""
         # cek apakah index sudah ditempati robot apa pun
         found = None
         for r, poses in self.robot_pos.items():
@@ -144,13 +156,10 @@ class GridGUI(Node):
                 break
 
         if found:
-            # hapus robot di sel itu
             self.robot_pos[found].remove(index)
         else:
-            # tambahkan robot aktif
             limits = {"KFS R1": 3, "KFS R2": 4, "KFS FAKE": 1}
             if len(self.robot_pos[self.active_robot]) >= limits[self.active_robot]:
-                # tb.messagebox.showwarning("Limit", f"{self.active_robot} sudah maksimal!")
                 messagebox.showwarning("Limit", f"{self.active_robot} sudah maksimal!")
                 return
             self.robot_pos[self.active_robot].append(index)
@@ -159,18 +168,18 @@ class GridGUI(Node):
         self.update_decision()
 
     def render(self):
-        # Reset grid
-        for display_number, index in self.display_to_index.items():
-            self.buttons[index].configure(text=str(display_number), bootstyle="secondary")
+        # Reset semua tombol ke tampilan indeks asli
+        for idx, btn in enumerate(self.buttons):
+            btn.configure(text=str(idx), bootstyle="secondary")
 
         robot_color = {"KFS R1":"danger", "KFS R2":"info", "KFS FAKE":"warning"}
 
-        # Render robot di grid
+        # Gambar robot di grid
         for r, poses in self.robot_pos.items():
             for p in poses:
                 self.buttons[p].configure(text=r, bootstyle=robot_color[r])
 
-        # Update counters
+        # Update counter
         limits = {"KFS R1": 3, "KFS R2": 4, "KFS FAKE": 1}
         for r, counter in self.robot_counters.items():
             counter.configure(text=f"{len(self.robot_pos[r])}/{limits[r]}")
@@ -183,19 +192,12 @@ class GridGUI(Node):
 
     def process_target(self):
         r2_positions = self.robot_pos["KFS R2"]
-
-        chase_raw = r2_positions[:2]
-
+        chase_raw = r2_positions[:2]                     # indeks asli
         avoid_from_r2 = r2_positions[2:]
+        avoid_all = self.robot_pos["KFS R1"] + self.robot_pos["KFS FAKE"] + avoid_from_r2
 
-        avoid_all = (self.robot_pos["KFS R1"] + self.robot_pos["KFS FAKE"] + avoid_from_r2)
-
-        display_chase = [self.total_cells - 1 - i for i in chase_raw]
-        display_avoid = [self.total_cells - 1 - i for i in avoid_all]
-
-
-        has_chase = len(display_chase) > 0
-        has_avoid = len(display_avoid) > 0
+        has_chase = len(chase_raw) > 0
+        has_avoid = len(avoid_all) > 0
 
         if has_chase and has_avoid:
             mode = 3
@@ -206,40 +208,26 @@ class GridGUI(Node):
         else:
             mode = 0
 
-        return mode, display_chase,display_avoid
-    
-    def send_decision(self):
-        mode, display_chase,display_avoid = self.process_target()
-        # has_chase = len(self.robot_pos["KFS R2"]) > 0
-        # has_avoid = len(self.robot_pos["KFS R1"]) > 0 or len(self.robot_pos["KFS FAKE"]) > 0
+        return mode, chase_raw, avoid_all   # langsung indeks asli
 
-        if not (display_chase or display_avoid):
+    def send_decision(self):
+        mode, chase_indices, avoid_indices = self.process_target()
+
+        if not (chase_indices or avoid_indices):
             messagebox.showwarning("Warning", "Belum ada target!")
             return
-        
-        # display_chase = [self.total_cells - 1 - i for i in self.robot_pos["KFS R2"]]
-        # display_avoid = [self.total_cells - 1 - i for i in self.robot_pos["KFS R1"] + self.robot_pos["KFS FAKE"]]
-
-        # if has_chase and has_avoid:
-        #     mode = 3
-        # elif has_chase:
-        #     mode = 1
-        # elif has_avoid:
-        #     mode = 2
-        # else:
-        #     mode = 0
 
         msg = KFSDecision()
         msg.mode = mode
-        msg.chase_targets = display_chase
-        msg.avoid_targets = display_avoid
+        msg.chase_targets = chase_indices   # kirim indeks asli
+        msg.avoid_targets = avoid_indices
 
         self.decision_pub.publish(msg)
 
         decision = {
-            "mode" : mode,
-            "chase" : display_chase,
-            "avoid" : display_avoid
+            "mode": mode,
+            "chase": chase_indices,
+            "avoid": avoid_indices
         }
 
         self.decision_box.configure(state='normal')
@@ -252,42 +240,24 @@ class GridGUI(Node):
 
     def update_decision(self):
         self.decision_box.configure(state='normal')
-        self.decision_box.delete('1.0',END)
+        self.decision_box.delete('1.0', END)
 
-        # has_chase = len(self.robot_pos["KFS R2"]) > 0
-        # has_avoid = len(self.robot_pos["KFS R1"]) > 0 or len(self.robot_pos["KFS FAKE"]) > 0
+        mode, chase_indices, avoid_indices = self.process_target()
 
-        mode, display_chase,display_avoid = self.process_target()
-
-        if not (display_chase or display_avoid):
+        if not (chase_indices or avoid_indices):
             self.decision_box.insert(END, "Menunggu KFS dipilih...")
             self.decision_box.configure(state="disabled")
             return
 
-        # display_chase = [self.total_cells - 1 - i for i in self.robot_pos["KFS R2"]]
-        # display_avoid = [self.total_cells - 1 - i for i in self.robot_pos["KFS R1"] + self.robot_pos["KFS FAKE"]]
-
-        # #=====untuk tentukan mode nya====
-        # if has_chase and has_avoid:
-        #     mode = 3 #mixed
-        # elif has_chase:
-        #     mode = 1 #chase
-        # elif has_avoid:
-        #     mode = 2 #avoid
-        # else:
-        #     mode = 0 #idle
-
         decision = {
-            "mode" : mode,
-            "chase" : display_chase,
-            "avoid" : display_avoid
+            "mode": mode,
+            "chase": chase_indices,
+            "avoid": avoid_indices
         }
 
-        self.decision_box.insert(END, "preview Decision:\n")
+        self.decision_box.insert(END, "Preview Decision:\n")
         self.decision_box.insert(END, str(decision))
-
         self.decision_box.configure(state='disabled')
-
 
     def run(self):
         self.root.mainloop()
@@ -296,13 +266,10 @@ def main():
     rclpy.init()
     gui_node = GridGUI()
     try:
-        gui_node.root.mainloop()
+        gui_node.run()
     finally:
         gui_node.destroy_node()
         rclpy.shutdown()
 
-
 if __name__ == "__main__":
     main()
-    # gui = GridGUI()
-    # gui.run()

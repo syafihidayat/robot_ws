@@ -18,7 +18,7 @@ public:
       "/infraReceive", 10,
       std::bind(&waypointPublish::ir_callback, this, std::placeholders::_1));
 
-    // lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
+    lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
 
     toStage2_pub = this->create_publisher<std_msgs::msg::Bool>("toStage2", 10);
 
@@ -27,10 +27,10 @@ public:
       {0.2, 0.0}
       // {0.0, 1.0}
 
-      // {0.2, 1.0},
+      // {0.0, 1.0},
       // {1.1, 1.0},
-      // {2.0, -0.63}
-      // {3.0, -0.6}
+      // {1.1, -1.5},
+      // {2.0, -1.5}
     };
 
     current_waypoint_index = 0;

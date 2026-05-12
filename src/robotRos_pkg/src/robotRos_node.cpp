@@ -3,6 +3,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/point.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/u_int16.hpp>
 #include "gui_kfs_msgs/msg/kfs_decision.hpp"
 #include <pid.hpp>
@@ -26,47 +27,64 @@ public:
     cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
 
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
-    std::bind(&Movement::odom_callback, this, std::placeholders::_1));
+                                                                  std::bind(&Movement::odom_callback, this, std::placeholders::_1));
 
     pose_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose", 10,
-    std::bind(&Movement::pose_callback, this, std::placeholders::_1));
+                                                                    std::bind(&Movement::pose_callback, this, std::placeholders::_1));
 
     proxy_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata", 10,
-    std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
+                                                               std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
 
     waypoint_backend_sub = this->create_subscription<geometry_msgs::msg::Point>("/planner/waypoint", 10,
-    std::bind(&Movement::waypoint_backend_callback, this, std::placeholders::_1));
+                                                                                std::bind(&Movement::waypoint_backend_callback, this, std::placeholders::_1));
 
     gui_sub = this->create_subscription<gui_kfs_msgs::msg::KFSDecision>("kfs_decision", 10,
-    std::bind(&Movement::gui_callback, this, std::placeholders::_1));
+                                                                        std::bind(&Movement::gui_callback, this, std::placeholders::_1));
 
     toStage2_sub = this->create_subscription<std_msgs::msg::Bool>("toStage2", 10,
-    std::bind(&Movement::toStage2_callback, this, std::placeholders::_1));
+                                                                  std::bind(&Movement::toStage2_callback, this, std::placeholders::_1));
 
     after_climb_sub = this->create_subscription<std_msgs::msg::Bool>("afterClimb", 10,
-    std::bind(&Movement::after_climb_callback, this, std::placeholders::_1));
+                                                                     std::bind(&Movement::after_climb_callback, this, std::placeholders::_1));
 
     // boundingBox_sub = this->create_subscription<geometry_msgs::msg::Point>("coordinate_boundingBox", 10,
     //                                                                        std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
 
     limit_stage2_sub = this->create_subscription<std_msgs::msg::Bool>("limitdata", 10,
-    std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
+                                                                      std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
 
     tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
-    std::bind(&Movement::tof_callback, this, std::placeholders::_1));
+                                                               std::bind(&Movement::tof_callback, this, std::placeholders::_1));
 
     tof_send_pub = this->create_publisher<std_msgs::msg::UInt16>("tof_send_back", 10);
 
     lifter2_sub = this->create_subscription<std_msgs::msg::Bool>("/lifter_down2", 10,
-    std::bind(&Movement::lifter2_callback, this, std::placeholders::_1));
+                                                                 std::bind(&Movement::lifter2_callback, this, std::placeholders::_1));
 
     reached_pub = this->create_publisher<std_msgs::msg::Bool>("/target_reached", 10);
 
     infraReceive_sub = this->create_subscription<std_msgs::msg::Bool>("infraReceive", 10,
-      std::bind(&Movement::infra_callback, this, std::placeholders::_1));
+                                                                      std::bind(&Movement::infra_callback, this, std::placeholders::_1));
+
+    reached_Astar_sub = this->create_subscription<std_msgs::msg::Bool>("/target_Astar_Done", 10,
+                                                                       std::bind(&Movement::reached_Astar_callback, this, std::placeholders::_1));
 
     proxy_true_pub = this->create_publisher<std_msgs::msg::Bool>("/true_sensor_proxy", 10);
 
+    wp_reached2_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/wp_reached", 10);
+
+    climb_done_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/r2_arrived", 10);
+
+    wait_lifter_sub = this->create_subscription<std_msgs::msg::Bool>("/wait_lifter", 10,
+                                                                     std::bind(&Movement::wait_lifter_callback, this, std::placeholders::_1));
+
+    wp_done_pub = this->create_publisher<std_msgs::msg::Bool>("/wp_done", 10);
+
+    path_list_sub = this->create_subscription<std_msgs::msg::String>("/meihua/path_steps", 10,
+                                                                     std::bind(&Movement::path_list_callback, this, std::placeholders::_1));
+
+    next_step_sub = this->create_subscription<std_msgs::msg::String>("/meihua/next_step", 10,
+                                                                     std::bind(&Movement::next_step_callback, this, std::placeholders::_1));
 
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::control_loop, this));
 
@@ -78,15 +96,15 @@ public:
     float kp, ki, kd;
     float kpT, kiT, kdT;
 
-    this->declare_parameter("kp", 0.70);
+    this->declare_parameter("kp", 0.75);
     this->declare_parameter("ki", 0.0);
     this->declare_parameter("kd", 0.0);
 
     // this->declare_parameter("kp", 1.0);
-    // this->declare_parameter("ki", 0.0001);
+    // this->declare_parameter("ki", 0.0);
     // this->declare_parameter("kd", 0.0);
 
-    this->declare_parameter("kpT", 3.0);
+    this->declare_parameter("kpT", 1.2);
     this->declare_parameter("kiT", 0.0);
     this->declare_parameter("kdT", 0.0);
 
@@ -111,7 +129,6 @@ public:
   }
 
 private:
-
   enum State
   {
     WAITING_FOR_TARGET,
@@ -122,7 +139,10 @@ private:
     AFTER_CLIMB,
     STOP_SENSOR,
     POST_CLIMB_MOVE,
-    STAGE2_MOVE_STEPbSTEP
+    STAGE2_MOVE_STEPbSTEP,
+    // GOAL_DONE,
+    WAIT_LIFTER,
+    // GOAL_ADVANCE
   };
 
   // enum Stage2state
@@ -135,13 +155,23 @@ private:
   //   COMPLETE
   // };
 
-  enum Stage2Substate
+  // enum Stage2Substate
+
+  enum Stage2SubState
   {
-    ST2_PLAN,
-    ST2_ROTATE,
-    ST2_MOVE,
-    // ST2_CHECK_YOLO,
-    // ST2_APPROACH,
+    ST2_IDLE,
+    // ST2_HOLD,
+    ST2_STRAIGHT_CLIMB,
+    // ST2_CHECK_DIR,
+    // ST2_MOVE,
+    // ST2_ADVANCE,
+    ST2_AFTER_CLIMB,
+    // ST2_SLOW,
+    ST2_STOP_SENSOR,
+    ST2_POST_CLIMB,
+    ST2_WAIT_LIFTER,
+    // ST2_WP_DONE,
+    // ST2_ALIGN,
     ST2_DONE
   };
 
@@ -174,8 +204,8 @@ private:
   bool start_saved = false;
   double stop_time = 0;
   bool stop_initialize = false;
-
-
+  double heading = 0.0;
+  bool waiting_lifter = false;
 
   bool stage2_initiallized = false;
   bool stage2_triggred = false;
@@ -186,7 +216,7 @@ private:
   double stage2_start_x = 0;
   double stage2_yaw = 0;
   // int current_block = 1;
-  Stage2Substate stage2_substate = ST2_MOVE;
+  // Stage2Substate stage2_substate = ST2_MOVE;
   // Stage2state stage2_substate = MOVE_FORWARD;
   State previous_state_before_pause;
   double rotation_direction = 1;
@@ -196,8 +226,50 @@ private:
   float yolo_errorX = 0.0;
   float yolo_depth = -1.0;
   float target = 0.0;
+  double wp_x, wp_y = 0;
+  bool has_wp = false;
+  bool need_climb = false;
+  double currentYaw = 0.0;
+  double heading_offset = 0.0;
+  double last_angle_error = 0.0;
+  bool stage2_entry_locked = false;
+  double targetX_world = 0.0;
+  double targetY_world = 0.0;
+  double start_x_st2 = 0.0;
+  double start_y_st2 = 0.0;
+  bool climb_finished = false;
+  bool is_stage2 = false;
+  bool wp_processing = false;
+  bool limit_triggered = false;
+  bool wp_done_sent = false;
+  double odom_offset_x = 0.0;
+  double odom_offset_y = 0.0;
 
-  int last_known_target_cell = -1;
+  Stage2SubState st2_state = ST2_IDLE;
+  // double st2_timer_start = 0.0;
+  // int st2_target_dir = 0;                             // 0=kanan,1=atas,2=kiri,3=bawah
+  // int st2_current_grid_x = 1, st2_current_grid_y = 0; // posisi awal setelah climb
+  // double st2_short_start_x, st2_short_start_y;
+  // bool st2_short_odom_init = false;
+  // double st2_target_yaw_rad;
+
+  int st2_current_grid_x, st2_current_grid_y;
+  int st2_current_dir; // 0=kanan, 1=atas, 2=kiri, 3=bawah
+  int st2_target_dir;
+  double st2_rot_duration;
+  double st2_rot_start_time;
+  double st2_timer_start;
+  bool st2_short_odom_init;
+  double st2_short_start_x, st2_short_start_y;
+
+  double normalize_angle(double angle)
+  {
+    while (angle > M_PI)
+      angle -= 2 * M_PI;
+    while (angle < -M_PI)
+      angle += 2 * M_PI;
+    return angle;
+  }
 
   double convertation(const nav_msgs::msg::Odometry &odom_robot)
   {
@@ -233,11 +305,12 @@ private:
     double yaw, roll, pitch;
     cnvrt.quat_to_eular(rbt_q, yaw, pitch, roll);
 
+    heading = yaw;
+
     odom_robot_msg = *msg;
 
-    currentX = msg->pose.pose.position.x;
-    currentY = msg->pose.pose.position.y;
-
+    currentX = msg->pose.pose.position.x + odom_offset_x;
+    currentY = msg->pose.pose.position.y + odom_offset_y;
     if (!start_received)
     {
       startX = currentX;
@@ -250,15 +323,14 @@ private:
   {
     // if (current_state != WAITING_FOR_TARGET)
     //   return;
-    
-      targetX = msg->x;
-      targetY = msg->y;
-      target_received = true;
-      target_reached_flag = false;
 
-      RCLCPP_INFO(this->get_logger(), "New target STAGE1 received: (%.2f, %.2f)", targetX, targetY);
-      RCLCPP_INFO(this->get_logger(), "Current position: (%.2f, %.2f)", currentX, currentY);
-    
+    targetX = msg->x;
+    targetY = msg->y;
+    target_received = true;
+    target_reached_flag = false;
+
+    RCLCPP_INFO(this->get_logger(), "New target STAGE1 received: (%.2f, %.2f)", targetX, targetY);
+    RCLCPP_INFO(this->get_logger(), "Current position: (%.2f, %.2f)", currentX, currentY);
   }
 
   bool last_detected = false;
@@ -269,22 +341,20 @@ private:
 
     bool detected = msg->data;
     bool new_obstacle = !detected;
-    
 
-    if(new_obstacle != sensor_obstacle)
+    if (new_obstacle != sensor_obstacle)
     {
       RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", new_obstacle ? "STOP" : "GO");
     }
-    
+
     sensor_obstacle = !detected;
-    
-    if( detected != last_detected)
+
+    if (detected != last_detected)
     {
       RCLCPP_INFO(this->get_logger(), "SENSOR RAW: %s", detected ? "TRUE" : "FALSE");
-      
     }
 
-    if(!detected)
+    if (!detected)
     {
       obstacle_lock = true;
     }
@@ -314,13 +384,13 @@ private:
   }
 
   double tof_distance = 0;
-  #define TOF_THRESHOLD 100
+#define TOF_THRESHOLD 100
 
   void tof_callback(const std_msgs::msg::UInt16::SharedPtr msg)
   {
     uint16_t distance = msg->data;
 
-    if(distance > 0)
+    if (distance > 0)
     {
       tof_distance = distance;
       tof_valid = true;
@@ -329,11 +399,11 @@ private:
       std_msgs::msg::UInt16 send_back_msg;
       send_back_msg.data = msg->data;
       tof_send_pub->publish(send_back_msg);
-    } 
+    }
 
-    if(distance > 0 && distance < TOF_THRESHOLD && !ignore_obstacle)
+    if (distance > 0 && distance < TOF_THRESHOLD && !ignore_obstacle)
     {
-      if(current_state == MOVING_TO_TARGET)
+      if (current_state == MOVING_TO_TARGET)
       {
         previous_state_before_pause = current_state;
         current_state = PAUSED_STAGE1;
@@ -363,12 +433,11 @@ private:
     }
   }
 
-
   bool stage2_flag = false;
   void toStage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
 
-    if(msg->data)
+    if (msg->data)
     {
       stage2_flag = true;
     }
@@ -378,28 +447,11 @@ private:
 
   void lifter2_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if(msg->data)
+    if (msg->data)
     {
       lifter_down2_flag = true;
       ignore_obstacle = true;
       RCLCPP_INFO(this->get_logger(), "LIFTER DOWN 2 DETECTED");
-    }
-  }
-
-
-  bool has_active_target = false;
-
-  void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
-  {
-
-    if (!has_active_target)
-    // if ((current_state == WAITING_FOR_TARGET || current_state == STAGE2_MOVE_STEPbSTEP) && !has_active_target)
-    {
-
-      target_Astar_X = msg->x;
-      target_Astar_Y = msg->y;
-      receive_waypoint_backend = true;
-      has_active_target = true;
     }
   }
 
@@ -409,24 +461,298 @@ private:
   {
     decision_receive = true;
     RCLCPP_INFO(this->get_logger(), "Decision received -> robot boleh jalan");
-
   }
+
+  void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  {
+
+    // wp_x = msg->x;
+    // wp_y = msg->y;
+
+    // double CELL_SIZE = 1.2;
+
+    // targetX_world = (wp_x * CELL_SIZE) + (CELL_SIZE / 2.0);
+    // targetY_world = (wp_y * CELL_SIZE) + (CELL_SIZE / 2.0);
+
+    // need_climb = (msg->z == 1.0);
+
+    // has_wp = true;
+    // wp_done_sent = false;
+    // goal_done = false;
+    // climb_finished = false;
+    // wp_processing = false;
+
+    // st2_state = ST2_IDLE;
+
+    // RCLCPP_INFO(this->get_logger(), "New WP: %.2f %.2f", wp_x, wp_y);
+
+    // RCLCPP_INFO(this->get_logger(), "New WP grid(%.0f,%.0f) need_climb=%d", wp_x, wp_y, (int)need_climb);
+
+    // RCLCPP_INFO(this->get_logger(), "Target World: %.2f %.2f", targetX_world, targetY_world);
+    // // RCLCPP_INFO(this->get_logger(), "New WP grid(%.0f,%.0f) world(%.2f,%.2f)",
+    //             msg->x, msg->y, targetX_world, targetY_world);
+  }
+
+  bool limit_active = false;
 
   void limit_stage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if(msg->data)
+
+    if (!msg->data)
+      return;
+
+    // ================= STAGE 2 =================
+    if (is_stage2)
     {
-      current_state = STOP_SENSOR;
+      // hanya trigger saat lagi jalan
+      if (st2_state == ST2_STRAIGHT_CLIMB ||
+          st2_state == ST2_AFTER_CLIMB)
+      {
+        st2_state = ST2_STOP_SENSOR;
+      }
+    }
+
+    // ================= STAGE 1 =================
+    else
+    {
+      if (current_state == STRAIGHT_FOR_CLIMB ||
+          current_state == AFTER_CLIMB)
+      {
+        current_state = STOP_SENSOR;
+      }
     }
   }
 
   void after_climb_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if(msg->data && current_state == STRAIGHT_FOR_CLIMB)
+
+    if (!msg->data)
+      return;
+
+    // ===== STAGE 1 =====
+    // if (current_state == STRAIGHT_FOR_CLIMB)
+    // {
+    //   current_state = AFTER_CLIMB;
+    // }
+
+    // if(current_state == WAIT_LIFTER && ST2_STRAIGHT_CLIMB)
+    // {
+    //   st2_state = ST2_AFTER_CLIMB;
+    // }
+
+    if (!is_stage2)
     {
-      current_state = AFTER_CLIMB;
+      if (current_state == WAIT_LIFTER)
+      {
+        current_state = AFTER_CLIMB;
+      }
+    }
+    else
+    {
+      // ===== STAGE 2 =====
+      if (st2_state == ST2_WAIT_LIFTER)
+      {
+        st2_state = ST2_AFTER_CLIMB;
+      }
     }
   }
+
+  void wait_lifter_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+
+    // if (msg->data)
+    // {
+    //   current_state = WAIT_LIFTER;
+    // }
+
+    if (!msg->data)
+      return;
+
+    if (!is_stage2)
+    {
+      current_state = WAIT_LIFTER;
+    }
+    else
+    {
+      st2_state = ST2_WAIT_LIFTER;
+    }
+  }
+
+  void reached_Astar_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    //   if (!msg->data)
+    //     return;
+
+    //   goal_done = true;
+    //   // current_state = GOAL_DONE;
+
+    //   RCLCPP_INFO(this->get_logger(), "Goal reached → GOAL_DONE");
+  }
+  bool goal_done = false;
+
+  void path_list_callback(const std_msgs::msg::String::SharedPtr msg)
+  {
+    std::string path_steps = msg->data;
+    RCLCPP_INFO(this->get_logger(), "Received A* path steps: %s", path_steps.c_str());
+  }
+
+  std::string latest_next_step;
+  bool goal_active = false;
+
+  void next_step_callback(const std_msgs::msg::String::SharedPtr msg)
+  {
+    latest_next_step = msg->data;
+
+    RCLCPP_INFO(this->get_logger(), "Received next step: %s", latest_next_step.c_str());
+
+    // update_target_from_step(latest_next_step);
+
+    // std::string dir = parse_direction_from_json(latest_next_step);
+
+    int row = parse_int_from_json(msg->data, "row");
+    int col = parse_int_from_json(msg->data, "col");
+    std::string dir = parse_direction_from_json(msg->data);
+
+    if (!dir.empty() && row >= 0 && col >= 0)
+    {
+      update_target_from_step(row, col);
+      // update_target_from_step(dir);
+      has_wp = true;
+      goal_active = true;
+      wp_processing = false;
+      wp_done_sent = false;
+      climb_finished = false;
+      goal_done = false;
+      st2_state = ST2_IDLE;
+
+      RCLCPP_INFO(this->get_logger(), "Parsed direction: %s → target set", dir.c_str());
+    }
+    else
+    {
+      RCLCPP_WARN(this->get_logger(), "gagal parse direction dari JSON: %s", latest_next_step.c_str());
+    }
+  }
+
+  std::string parse_direction_from_json(const std::string &json_str)
+  {
+
+    // std::string dir = "";
+
+    auto extract = [&](const std::string &key) -> std::string
+    {
+      size_t pos = json_str.find(key);
+      if (pos == std::string::npos)
+        return "";
+      pos += key.size();
+      // skip spasi
+      while (pos < json_str.size() && json_str[pos] == ' ')
+        pos++;
+      // skip quote pembuka
+      if (pos < json_str.size() && json_str[pos] == '"')
+        pos++;
+      size_t end = json_str.find('"', pos);
+      if (end == std::string::npos)
+        return "";
+      return json_str.substr(pos, end - pos);
+    };
+
+    std::string dir = extract("\"direction\":"); // coba "direction":
+    if (dir.empty())
+      dir = extract("\"direction\" :"); // coba "direction" :
+
+    if (dir == "SOUTH")
+      return "DOWN";
+    if (dir == "NORTH")
+      return "UP";
+    if (dir == "EAST")
+      return "RIGHT";
+    if (dir == "WEST")
+      return "LEFT";
+    if (dir == "START" || dir.empty())
+      return "";
+
+    return dir;
+  }
+
+  int parse_int_from_json(const std::string &json_str, const std::string &field)
+  {
+    // Coba dengan spasi: "row": 1
+    std::string key1 = "\"" + field + "\": ";
+    // Coba tanpa spasi: "row":1
+    std::string key2 = "\"" + field + "\":";
+
+    size_t pos = json_str.find(key1);
+    if (pos == std::string::npos)
+      pos = json_str.find(key2);
+    if (pos == std::string::npos)
+      return -1;
+
+    // Cari angkanya
+    pos = json_str.find_first_of("0123456789", pos);
+    if (pos == std::string::npos)
+      return -1;
+
+    return std::stoi(json_str.substr(pos));
+  }
+
+  int current_grid_row = 0;
+  int current_grid_col = 1;
+
+  const double CELL_SIZE = 1.2;
+  const double GRID_ORIGIN_X = 1.35;
+  const double GRID_ORIGIN_Y = -1.25;
+
+  void update_target_from_step(int target_row, int target_col)
+  {
+    // const double CELL_SIZE = 1.2; // meter per grid
+
+    // if (dir == "RIGHT")      { targetX_world = currentX + CELL_SIZE; targetY_world = currentY; }
+    // else if (dir == "LEFT")  { targetX_world = currentX - CELL_SIZE; targetY_world = currentY; }
+    // else if (dir == "UP")    { targetX_world = currentX;             targetY_world = currentY + CELL_SIZE; }
+    // else if (dir == "DOWN")  { targetX_world = currentX;             targetY_world = currentY - CELL_SIZE; }
+    // else
+    // {
+    //     RCLCPP_WARN(this->get_logger(), "Unknown step received: %s", dir.c_str());
+    //     return;
+    // }
+    // RCLCPP_INFO(this->get_logger(), "Target set → (%.2f, %.2f)", targetX_world, targetY_world);
+
+    targetY_world = -(GRID_ORIGIN_Y + (target_col * CELL_SIZE));
+    targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
+
+    current_grid_row = target_row;
+    current_grid_col = target_col;
+
+    RCLCPP_INFO(this->get_logger(), "Target grid(%d,%d) → world(%.2f, %.2f)", target_row, target_col, targetX_world, targetY_world);
+  }
+
+  // void update_target_from_step(const std::string &step)
+  // {
+  //   if (step == "RIGHT")
+  //   {
+  //     targetX_world = currentX + 1.2;
+  //     targetY_world = currentY;
+  //   }
+  //   else if (step == "LEFT")
+  //   {
+  //     targetX_world = currentX - 1.2;
+  //     targetY_world = currentY;
+  //   }
+  //   else if (step == "UP")
+  //   {
+  //     targetX_world = currentX;
+  //     targetY_world = currentY + 1.2;
+  //   }
+  //   else if (step == "DOWN")
+  //   {
+  //     targetX_world = currentX;
+  //     targetY_world = currentY - 1.2;
+  //   }
+  //   else
+  //   {
+  //     RCLCPP_WARN(this->get_logger(), "Unknown step received: %s", step.c_str());
+  //   }
+  // }
 
   void control_loop()
   {
@@ -456,17 +782,22 @@ private:
     float controlled_distance = omni_distance.control_base(distance, desired_linear_vel);
     float controlled_angle = omni_angular.control_base_rotation(theta, max_angular_vel);
 
-    
-    if(!decision_receive)
+    if (!decision_receive)
     {
       cmd.linear.x = 0;
       cmd.linear.y = 0;
       cmd.angular.z = 0;
-      RCLCPP_INFO(this->get_logger()," Waiting target receive from gui......");
+      RCLCPP_INFO(this->get_logger(), " Waiting target receive from gui......");
       RCLCPP_INFO(this->get_logger(), "posisi x %f", currentX);
       RCLCPP_INFO(this->get_logger(), "posisi y %f\n", currentY);
       return;
     }
+
+    // if (limit_active)
+    // {
+    //   cmd.linear.x = 0.0;
+    //   cmd.angular.z = 0.0;
+    // }
 
     switch (current_state)
     {
@@ -485,15 +816,14 @@ private:
 
     case MOVING_TO_TARGET:
     {
-      
-      
-      if (( tof_valid && distance < TOF_THRESHOLD|| sensor_obstacle || obstacle_lock) && !ignore_obstacle)
+
+      if ((tof_valid && distance < TOF_THRESHOLD || sensor_obstacle || obstacle_lock) && !ignore_obstacle)
       {
         RCLCPP_INFO(this->get_logger(), " Stage 1: BLOCKED by obstacle");
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
         cmd.angular.z = 0.0;
-        
+
         break;
       }
 
@@ -504,35 +834,36 @@ private:
       RCLCPP_INFO(this->get_logger(), "dx: %f dy: %f", dx, dy);
       // RCLCPP_INFO(this->get_logger(), "posisi y", currentY);
 
-
       if (distance > 0.03)
       {
 
-          // if(stage2_flag)
-          // {
+        // if(stage2_flag)
+        // {
 
-          //   cmd.linear.x = controlled_distance * std::cos(angle);
-          //   cmd.linear.y = controlled_distance * std::sin(angle);
-          //   cmd.angular.z = -controlled_angle;
-          //   RCLCPP_INFO(this->get_logger(), "move robot stage2");
+        //   cmd.linear.x = controlled_distance * std::cos(angle);
+        //   cmd.linear.y = controlled_distance * std::sin(angle);
+        // cmd.angular.z = -controlled_angle;
+        //   RCLCPP_INFO(this->get_logger(), "move robot stage2");
 
-          // }
-          // else
-          // {
+        // }
+        // else
+        // {
 
-            // cmd.linear.x = 0.2 * std::cos(angle);
-            cmd.linear.x = controlled_distance * std::cos(angle);
-            cmd.linear.y = controlled_distance * std::sin(angle);
-            cmd.angular.z = -controlled_angle;
-            RCLCPP_INFO(this->get_logger(), "move robot");
+        cmd.linear.x = 0.2 * std::cos(angle);
+        // cmd.linear.x = controlled_distance * std::cos(angle);
+        cmd.linear.y = controlled_distance * std::sin(angle);
+        cmd.angular.z = -controlled_angle;
+        //  cmd.angular.z = 0.0;
+        RCLCPP_INFO(this->get_logger(), "move robot");
 
-          // }        
+        // }
       }
       else
       {
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
         cmd.angular.z = -controlled_angle;
+        // cmd.angular.z = 0.0;
 
         RCLCPP_INFO(this->get_logger(), "holding position");
 
@@ -541,7 +872,6 @@ private:
         {
 
           target_reached_flag = true;
-
 
           current_state = TARGET_REACHED;
           stage1_target_count++;
@@ -614,8 +944,9 @@ private:
 
     case STRAIGHT_FOR_CLIMB:
     {
-      cmd.linear.x = 0.8;
+      cmd.linear.x = 0.5;
       cmd.linear.y = 0.0;
+      // cmd.angular.z = 0.0;
       cmd.angular.z = -controlled_angle;
 
       RCLCPP_INFO(this->get_logger(), "STRAIGHT MODE - jalan lurus");
@@ -623,10 +954,22 @@ private:
       break;
     }
 
+    case WAIT_LIFTER:
+    {
+      cmd.linear.x = 0.0;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = 0.0;
+
+      RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
+
+      break;
+    }
+
     case AFTER_CLIMB:
     {
-      cmd.linear.x = 0.3;
+      cmd.linear.x = 0.4;
       cmd.linear.y = 0.0;
+      // cmd.angular.z = 0.0;
       cmd.angular.z = -controlled_angle;
 
       RCLCPP_INFO(this->get_logger(), "LIFTER TURUN MASUK KE MODE PELAN");
@@ -641,30 +984,26 @@ private:
       cmd.angular.z = 0.0;
       // cmd.angular.z = -controlled_angle;
 
-      RCLCPP_INFO(this->get_logger(), "STOP sensor WAITING LIFTER");
+      RCLCPP_INFO(this->get_logger(), "STOP 1 sensor WAITING LIFTER");
 
-      
-      if(!stop_initialize)
+      if (!stop_initialize)
       {
         stop_time = this->now().seconds();
         stop_initialize = true;
       }
 
-
       // if(!start_saved)
-      if(this->now().seconds() - stop_time > 2.0)
+      if (this->now().seconds() - stop_time > 2.0)
       {
         start_x_after_climb = currentX;
         start_y_after_climb = currentY;
 
         start_saved = true;
-  
+
         current_state = POST_CLIMB_MOVE;
       }
 
-
       break;
-
     }
 
     case POST_CLIMB_MOVE:
@@ -672,9 +1011,9 @@ private:
 
       double dx = currentX - start_x_after_climb;
       double dy = currentY - start_y_after_climb;
-      double dist = sqrt(dx*dx + dy*dy);
+      double dist = sqrt(dx * dx + dy * dy);
 
-      if(dist < 0.3)
+      if (dist < 0.3)
       {
         cmd.linear.x = 0.3;
         cmd.linear.y = 0.0;
@@ -686,134 +1025,325 @@ private:
         cmd.linear.y = 0.0;
         cmd.angular.z = -controlled_angle;
 
-        current_state = WAITING_FOR_TARGET;
+        std_msgs::msg::Bool reachedClimb_msg;
+        reachedClimb_msg.data = true;
+        climb_done_pub->publish(reachedClimb_msg);
+
+        RCLCPP_INFO(this->get_logger(), "masuk stage 2");
+
+        current_state = STAGE2_MOVE_STEPbSTEP;
+
+        is_stage2 = true;
         start_saved = false;
+        stage2_initiallized = false;
+        stop_initialize = false;
+        st2_state = ST2_IDLE;
+
+        if (!latest_next_step.empty())
+        {
+          // update_target_from_step(latest_next_step);
+          int row_ins = parse_int_from_json(latest_next_step, "row");
+          int col_ins = parse_int_from_json(latest_next_step, "col");
+          if (row_ins >= 0 && col_ins >= 0)
+          {
+            update_target_from_step(row_ins, col_ins);
+          }
+          goal_active = true;
+          has_wp = true;
+          wp_processing = false;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "ROBOT SUDAH DI TENGAH GRID");
       }
 
-
       break;
-
     }
-
 
       // ================================================STAGE 2====================================================
 
     case STAGE2_MOVE_STEPbSTEP:
     {
-      constexpr double CELL_SIZE = 1.0;
+      if (!goal_active)
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+        break;
+      }
 
       if (!stage2_initiallized)
       {
+        st2_state = ST2_IDLE;
 
-        planner.reset();
+        // has_wp = false;
+        goal_done = false;
+        climb_finished = false;
+        wp_processing = false;
 
-        stage2_substate = ST2_PLAN;
+        // limit_triggered = false;
+
         stage2_initiallized = true;
-        RCLCPP_INFO(this->get_logger(), "STAGE2 STARTED (GRID PLANNER/WAYPOINT MODE)");
+
+        RCLCPP_INFO(this->get_logger(), "STAGE2 INIT");
       }
 
-      double dx2 = target_Astar_X - currentX;
-      double dy2 = target_Astar_Y - currentY;
-      double dist = std::sqrt(dx2 * dx2 + dy2 * dy2);
-      double current_yaw = convertation(odom_robot_msg);
-
-      // float control_distance2 = omni_distance.control_base(dist, deltaT);
-
-      switch (stage2_substate)
+      switch (st2_state)
       {
-
-      case ST2_PLAN:
+      case ST2_IDLE:
       {
-        if (!receive_waypoint_backend)
-          break;
+        // if (goal_done)
+        // {
 
-        int current_cell = planner.worldToGrid(currentX, currentY);
-        int target_cell = planner.worldToGrid(target_Astar_X, target_Astar_Y);
+        //   goal_done = false;
 
-        int next = planner.chooseNextCell(current_cell, target_cell);
+        //   RCLCPP_INFO(this->get_logger(), "FINAL STATE READY");
 
-        if (next < 0 || next == target_cell)
+        //   st2_state = ST2_AFTER_CLIMB;
+        //   break;
+        // }
+
+        if (has_wp && !wp_processing)
         {
-          stage2_substate = ST2_DONE;
-          receive_waypoint_backend = false;
-          break;
-        }
+          wp_processing = true;
 
-        planner.last_cell = current_cell;
-        planner.next_cell = next;
+          double dx = targetX_world - currentX;
+          double dy = targetY_world - currentY;
+          double dist = sqrt(dx * dx + dy * dy);
 
-        stage2_yaw = planner.cellToYaw(current_cell, next);
-        stage2_substate = ST2_ROTATE;
+          if (dist < 0.2) // sudah di WP ini, skip
+          {
+            // RCLCPP_INFO(this->get_logger(), "Skip WP, robot sudah di sini");
 
-        RCLCPP_INFO(this->get_logger(), "[STAGE2][PLAN] current_cell=%d | next_cell=%d | target_cell=%d",
-                    current_cell, next, target_cell);
+            std_msgs::msg::Bool wp_msg;
+            wp_msg.data = true;
+            wp_reached2_pub->publish(wp_msg);
 
-        break;
-      }
-
-      case ST2_ROTATE:
-      {
-        double current_yaw = convertation(odom_robot_msg);
-        double yaw_error = tf2NormalizeAngle(stage2_yaw - current_yaw);
-
-        if (std::fabs(yaw_error) > 0.05)
-        {
-          cmd.linear.x = 0.0;
-          cmd.linear.y = 0.0;
-          cmd.angular.z = 0.6 * yaw_error;
-        }
-        else
-        {
-          cmd.angular.z = 0.0;
-
-          stage2_start_x = currentX;
-          stage2_start_y = currentY;
-
-          stage2_substate = ST2_MOVE;
+            wp_processing = false;
+            has_wp = false;
+          }
+          else
+          {
+            st2_state = ST2_STRAIGHT_CLIMB;
+          }
         }
 
         break;
       }
 
-      case ST2_MOVE:
+      case ST2_STRAIGHT_CLIMB:
       {
-        // double dist = hypot(currentX - stage2_start_x,currentY - stage2_start_y);
-        float control_distance2 = omni_distance.control_base((CELL_SIZE - dist), deltaT);
+        double dx = targetX_world - currentX;
+        double dy = targetY_world - currentY;
 
-        if (dist < CELL_SIZE - 0.05)
-        {
-          cmd.linear.x = control_distance2 * cos(stage2_yaw);
-          cmd.linear.y = control_distance2 * sin(stage2_yaw);
-          cmd.angular.z = 0.0;
-        }
-        else
-        {
-          cmd.linear.x = 0.0;
-          cmd.linear.y = 0.0;
+        double dist = std::sqrt(dx * dx + dy * dy);
 
-          stage2_substate = ST2_PLAN;
+        double yaw = heading; // pastikan ini dari odom
+
+        // normalize yaw biar stabil
+        yaw = std::atan2(std::sin(yaw), std::cos(yaw));
+
+        // WORLD → ROBOT FRAME transform
+        double dx_r = std::cos(yaw) * dx + std::sin(yaw) * dy;
+        double dy_r = -std::sin(yaw) * dx + std::cos(yaw) * dy;
+
+        // logging debug (penting untuk cek arah)
+        RCLCPP_INFO(this->get_logger(),
+                    "ST2 dx=%.2f dy=%.2f dx_r=%.2f dy_r=%.2f dist=%.2f",
+                    dx, dy, dx_r, dy_r, dist);
+
+        // === safety check ===
+        if (dist > 3.0)
+        {
+          RCLCPP_WARN(this->get_logger(), "ST2: waypoint terlalu jauh / error drift");
+          has_wp = false;
+          st2_state = ST2_IDLE;
+          break;
         }
+
+        // === arrival condition ===
+        if (dist < 0.25)
+        {
+          if (need_climb)
+          {
+            st2_state = ST2_WAIT_LIFTER;
+          }
+          else
+          {
+            std_msgs::msg::Bool wp_msg;
+            wp_msg.data = true;
+            wp_reached2_pub->publish(wp_msg);
+
+            has_wp = false;
+            goal_active = false;
+            wp_processing = false;
+
+            st2_state = ST2_IDLE;
+
+            RCLCPP_INFO(this->get_logger(), "ST2 WP REACHED");
+          }
+          break;
+        }
+
+        // === MOTION CONTROL (FIX UTAMA) ===
+        cmd.linear.x = 0.3 * dx_r;
+        cmd.linear.y = 0.3 * dy_r;
+
+        // IMPORTANT: jangan pakai angular PID di translasi
+        cmd.angular.z = 0.0;
+
+        break;
+      }
+
+      case ST2_WAIT_LIFTER:
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+
+        RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
 
         break;
       }
 
       case ST2_DONE:
       {
+        if (!climb_finished)
+        {
+          break;
+        }
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
-        cmd.angular.z = 0.0;
+        cmd.angular.z = -controlled_angle;
 
-        stage2_initiallized = false;
-        receive_waypoint_backend = false;
-        current_state = TARGET_REACHED;
+        has_wp = false;
 
-        RCLCPP_INFO(this->get_logger(), "STAGE2 COMPLETE");
+        if (!wp_done_sent)
+        {
+          std_msgs::msg::Bool done_msg;
+          done_msg.data = true;
+          wp_done_pub->publish(done_msg);
+
+          wp_done_sent = true;
+
+          has_wp = false;
+          goal_active = false;
+          wp_processing = false;
+
+          RCLCPP_INFO(this->get_logger(), "WP DONE PUBLISHED");
+        }
+
+        RCLCPP_INFO(this->get_logger(), "STAGE 2 DONE - ROBOT STOP");
+
         break;
       }
+
+      case ST2_AFTER_CLIMB:
+      {
+        cmd.linear.x = 0.4;
+        cmd.angular.z = -controlled_angle;
+
+        RCLCPP_INFO(this->get_logger(), "ST2 AFTER CLIMB: jalan sampai limit");
+
+        break;
+      }
+
+      case ST2_STOP_SENSOR:
+      {
+        cmd.linear.x = 0.0;
+        cmd.angular.z = 0.0;
+
+        if (!stop_initialize)
+        {
+          stop_time = this->now().seconds();
+          stop_initialize = true;
+        }
+
+        if (this->now().seconds() - stop_time > 2.0)
+        {
+          start_x_after_climb = currentX;
+          start_y_after_climb = currentY;
+
+          st2_state = ST2_POST_CLIMB;
+          stop_initialize = false;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "ST2 STOP SENSOR");
+
+        break;
+      }
+
+      case ST2_POST_CLIMB:
+      {
+        double dx = currentX - start_x_after_climb;
+        double dy = currentY - start_y_after_climb;
+        double dist = sqrt(dx * dx + dy * dy);
+        double angle_st2 = atan2(dy, dx);
+
+        if (dist < 0.3)
+        {
+          // cmd.linear.x = 0.2;
+          // cmd.linear.y = 0.0;
+
+          if (dist < 0.01)
+          {
+            cmd.linear.x = 0.2;
+            cmd.linear.y = 0.0;
+          }
+          else
+          {
+            cmd.linear.x = 0.2 * cos(angle_st2);
+            cmd.linear.y = 0.2 * sin(angle_st2);
+          }
+
+          cmd.angular.z = -controlled_angle;
+
+          // cmd.linear.x = 0.2 * cos(angle_st2);
+          // cmd.linear.y = 0.2 * sin(angle_st2);
+        }
+        else
+        {
+          cmd.linear.x = 0.0;
+          cmd.linear.y = 0.0;
+          cmd.angular.z = 0.0;
+
+          double raw_odom_x = currentX - odom_offset_x;
+          double raw_odom_y = currentY - odom_offset_y;
+
+          odom_offset_x = targetX_world - raw_odom_x;
+          odom_offset_y = targetY_world - raw_odom_y;
+
+          RCLCPP_INFO(
+              this->get_logger(),
+              "ODOM SYNC -> current dianggap di (%.2f, %.2f)",
+              targetX_world,
+              targetY_world);
+
+          // climb_finished = true;
+          std_msgs::msg::Bool wp_msg;
+          wp_msg.data = true;
+          wp_reached2_pub->publish(wp_msg);
+
+          has_wp = false;
+          goal_active = false;
+          wp_processing = false;
+
+          climb_finished = true;
+          st2_state = ST2_IDLE;
+          ;
+          // st2_state = ST2_DONE;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "ST2 POST CLIMB");
+
+        break;
+      }
+
+        // ================= HADAP TARGET =================
       }
 
       break;
     }
+
     case TARGET_REACHED:
       cmd.linear.x = 0.0;
       cmd.linear.y = 0.0;
@@ -856,14 +1386,21 @@ private:
   rclcpp::Subscription<gui_kfs_msgs::msg::KFSDecision>::SharedPtr gui_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_stage2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr after_climb_sub;
-  // rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr pose2_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_Astar_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr proxy_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr toStage2_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr wait_lifter_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr proxy_true_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reached_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wp_reached2_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr climb_done_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wp_done_pub;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_list_sub;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr next_step_sub;
   nav_msgs::msg::Odometry odom_robot_msg;
 
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Time hold_start_time;
 };
 
 // bool Movement::swing_reset_done = false;

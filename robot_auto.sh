@@ -29,8 +29,13 @@ gnome-terminal --tab --title="Gui KFS" -- bash -c "source install/setup.bash;
                                                 echo Press any key to close;
                                                 read -n 1"
 
+gnome-terminal --tab --title="Gui + A*" -- bash -c "source install/setup.bash;
+                                                ros2 run mehuaStar mehua;
+                                                echp Press any key to close;
+                                                read -n1"
 
-gnome-terminal --tab --title="Path Planning" -- bash -c "source install/setup.bash;
+
+gnome-terminal --tab --title="Path Planning A*" -- bash -c "source install/setup.bash;
                                                 ros2 run  astar_pkg astar_node;
                                                 echo Press any key to close;
                                                 read -n 1"
