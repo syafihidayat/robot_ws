@@ -71,7 +71,7 @@ public:
 
     proxy_true_pub = this->create_publisher<std_msgs::msg::Bool>("/true_sensor_proxy", 10);
 
-    wp_reached2_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/wp_reached", 10);  // FIX Bug2: tambah leading slash
+    wp_reached2_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/wp_reached", 10);
 
     climb_done_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/r2_arrived", 10);
 
@@ -166,6 +166,7 @@ private:
     // ST2_MOVE,
     // ST2_ADVANCE,
     ST2_AFTER_CLIMB,
+    ST2_ROTATE,
     // ST2_SLOW,
     ST2_STOP_SENSOR,
     ST2_POST_CLIMB,
@@ -242,23 +243,17 @@ private:
   bool wp_processing = false;
   bool limit_triggered = false;
   bool wp_done_sent = false;
+  double odom_offset_x = 0.0;
+  double odom_offset_y = 0.0;
 
   Stage2SubState st2_state = ST2_IDLE;
-  // double st2_timer_start = 0.0;
-  // int st2_target_dir = 0;                             // 0=kanan,1=atas,2=kiri,3=bawah
-  // int st2_current_grid_x = 1, st2_current_grid_y = 0; // posisi awal setelah climb
-  // double st2_short_start_x, st2_short_start_y;
-  // bool st2_short_odom_init = false;
-  // double st2_target_yaw_rad;
 
-  int st2_current_grid_x, st2_current_grid_y;
-  int st2_current_dir; // 0=kanan, 1=atas, 2=kiri, 3=bawah
-  int st2_target_dir;
-  double st2_rot_duration;
-  double st2_rot_start_time;
-  double st2_timer_start;
-  bool st2_short_odom_init;
-  double st2_short_start_x, st2_short_start_y;
+  // ── Stage 2 rotate & reverse ─────────────────────────────────────────────
+  bool need_rotate       = false;  // true jika perlu rotate sebelum gerak
+  bool need_reverse      = false;  // true jika harus mundur (turun -200)
+  double rotate_target_yaw = 0.0; // target heading setelah rotate
+  double yaw_error         = 0.0; // error heading saat ini
+  int current_grid_height  = 200; // height grid saat ini (entry = 200mm)
 
   double normalize_angle(double angle)
   {
@@ -307,9 +302,8 @@ private:
 
     odom_robot_msg = *msg;
 
-    currentX = msg->pose.pose.position.x;
-    currentY = msg->pose.pose.position.y;
-
+    currentX = msg->pose.pose.position.x + odom_offset_x;
+    currentY = msg->pose.pose.position.y + odom_offset_y;
     if (!start_received)
     {
       startX = currentX;
@@ -604,13 +598,19 @@ private:
 
     RCLCPP_INFO(this->get_logger(), "Received next step: %s", latest_next_step.c_str());
 
-    // FIX Bug1: GUI kirim JSON {"step":1,"row":1,"col":0,"direction":"SOUTH",...}
-    // Parse direction dari JSON, bukan langsung pakai raw string
-    std::string dir = parse_direction_from_json(latest_next_step);
+    // update_target_from_step(latest_next_step);
 
-    if (!dir.empty())
+    // std::string dir = parse_direction_from_json(latest_next_step);
+
+    int row = parse_int_from_json(msg->data, "row");
+    int col = parse_int_from_json(msg->data, "col");
+    int height = parse_int_from_json(msg->data, "height");
+    std::string dir = parse_direction_from_json(msg->data);
+
+    if (!dir.empty() && row >= 0 && col >= 0)
     {
-      update_target_from_step(dir);
+      update_target_from_step(row, col, height, dir);
+      // update_target_from_step(dir);
       has_wp = true;
       goal_active = true;
       wp_processing = false;
@@ -618,67 +618,134 @@ private:
       climb_finished = false;
       goal_done = false;
       st2_state = ST2_IDLE;
+
       RCLCPP_INFO(this->get_logger(), "Parsed direction: %s → target set", dir.c_str());
     }
     else
     {
-      RCLCPP_WARN(this->get_logger(), "next_step: gagal parse direction dari JSON: %s", latest_next_step.c_str());
+      RCLCPP_WARN(this->get_logger(), "gagal parse direction dari JSON: %s", latest_next_step.c_str());
     }
   }
 
-  // FIX Bug1: helper parse direction dari JSON string GUI
-  // GUI kirim: {"step":0,"row":0,"col":1,"height":200,"direction":"START"}
-  //            {"step":1,"row":1,"col":1,"height":400,"direction":"SOUTH"}
   std::string parse_direction_from_json(const std::string &json_str)
   {
-    // Cari "direction":"VALUE"
-    std::string key = "\"direction\":\"";
-    size_t pos = json_str.find(key);
-    if (pos == std::string::npos)
+
+    // std::string dir = "";
+
+    auto extract = [&](const std::string &key) -> std::string
+    {
+      size_t pos = json_str.find(key);
+      if (pos == std::string::npos)
+        return "";
+      pos += key.size();
+      // skip spasi
+      while (pos < json_str.size() && json_str[pos] == ' ')
+        pos++;
+      // skip quote pembuka
+      if (pos < json_str.size() && json_str[pos] == '"')
+        pos++;
+      size_t end = json_str.find('"', pos);
+      if (end == std::string::npos)
+        return "";
+      return json_str.substr(pos, end - pos);
+    };
+
+    std::string dir = extract("\"direction\":"); // coba "direction":
+    if (dir.empty())
+      dir = extract("\"direction\" :"); // coba "direction" :
+
+    if (dir == "SOUTH")
+      return "DOWN";
+    if (dir == "NORTH")
+      return "UP";
+    if (dir == "EAST")
+      return "RIGHT";
+    if (dir == "WEST")
+      return "LEFT";
+    if (dir == "START" || dir.empty())
       return "";
 
-    pos += key.size();
-    size_t end = json_str.find("\"", pos);
-    if (end == std::string::npos)
-      return "";
-
-    std::string dir = json_str.substr(pos, end - pos);
-
-    // Mapping: GUI pakai NORTH/SOUTH/EAST/WEST → motion pakai UP/DOWN/RIGHT/LEFT
-    if (dir == "SOUTH") return "DOWN";
-    if (dir == "NORTH") return "UP";
-    if (dir == "EAST")  return "RIGHT";
-    if (dir == "WEST")  return "LEFT";
-    if (dir == "START") return "";   // step pertama = posisi entry, skip movement
-    return dir;  // kalau sudah pakai format yang sama
+    return dir;
   }
 
-  void update_target_from_step(const std::string &step)
+  int parse_int_from_json(const std::string &json_str, const std::string &field)
   {
-    if (step == "RIGHT")
+    // Coba dengan spasi: "row": 1
+    std::string key1 = "\"" + field + "\": ";
+    // Coba tanpa spasi: "row":1
+    std::string key2 = "\"" + field + "\":";
+
+    size_t pos = json_str.find(key1);
+    if (pos == std::string::npos)
+      pos = json_str.find(key2);
+    if (pos == std::string::npos)
+      return -1;
+
+    // Cari angkanya
+    pos = json_str.find_first_of("0123456789", pos);
+    if (pos == std::string::npos)
+      return -1;
+
+    return std::stoi(json_str.substr(pos));
+  }
+
+  int current_grid_row = 0;
+  int current_grid_col = 1;
+
+  const double CELL_SIZE    = 1.2;
+  const double GRID_ORIGIN_X = 1.35;
+  const double GRID_ORIGIN_Y = -1.25;
+
+  void update_target_from_step(int target_row, int target_col, int target_height, const std::string &dir)
+  {
+    targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
+    targetY_world = -(GRID_ORIGIN_Y + (target_col * CELL_SIZE));
+
+    int height_diff = target_height - current_grid_height;
+
+    if (height_diff < 0)
     {
-      targetX_world = currentX + 1.2;
-      targetY_world = currentY;
+      // ── TURUN -200: belakang robot ke target → mundur ──────────────────
+      need_reverse = true;
+      need_rotate  = true;
+
+      // membelakangi target = hadap arah kebalikan
+      if      (dir == "DOWN")  rotate_target_yaw = M_PI;       // target SOUTH → hadap NORTH
+      else if (dir == "UP")    rotate_target_yaw = 0.0;        // target NORTH → hadap SOUTH
+      else if (dir == "RIGHT") rotate_target_yaw = M_PI / 2;   // target EAST  → hadap WEST
+      else if (dir == "LEFT")  rotate_target_yaw = -M_PI / 2;  // target WEST  → hadap EAST
+
+      RCLCPP_INFO(this->get_logger(), "TURUN: rotate belakang ke target, mundur. yaw=%.2f", rotate_target_yaw);
     }
-    else if (step == "LEFT")
+    else if (dir == "DOWN")
     {
-      targetX_world = currentX - 1.2;
-      targetY_world = currentY;
-    }
-    else if (step == "UP")
-    {
-      targetX_world = currentX;
-      targetY_world = currentY + 1.2;
-    }
-    else if (step == "DOWN")
-    {
-      targetX_world = currentX;
-      targetY_world = currentY - 1.2;
+      // ── NAIK SOUTH: sudah hadap benar → langsung maju ──────────────────
+      need_reverse = false;
+      need_rotate  = false;
+
+      RCLCPP_INFO(this->get_logger(), "NAIK SOUTH: langsung maju");
     }
     else
     {
-      RCLCPP_WARN(this->get_logger(), "Unknown step received: %s", step.c_str());
+      // ── NAIK arah lain: depan robot ke target → rotate dulu lalu maju ──
+      need_reverse = false;
+      need_rotate  = true;
+
+      if      (dir == "UP")    rotate_target_yaw = M_PI;       // hadap NORTH
+      else if (dir == "RIGHT") rotate_target_yaw = -M_PI / 2;  // hadap EAST
+      else if (dir == "LEFT")  rotate_target_yaw = M_PI / 2;   // hadap WEST
+
+      RCLCPP_INFO(this->get_logger(), "NAIK %s: rotate depan ke target. yaw=%.2f", dir.c_str(), rotate_target_yaw);
     }
+
+    current_grid_row    = target_row;
+    current_grid_col    = target_col;
+    current_grid_height = target_height;
+
+    RCLCPP_INFO(this->get_logger(),
+      "Target grid(%d,%d) h=%d dir=%s → world(%.2f, %.2f) reverse=%d rotate=%d yaw=%.2f",
+      target_row, target_col, target_height, dir.c_str(),
+      targetX_world, targetY_world, need_reverse, need_rotate, rotate_target_yaw);
   }
 
   void control_loop()
@@ -968,9 +1035,16 @@ private:
 
         if (!latest_next_step.empty())
         {
-          update_target_from_step(latest_next_step);
-          goal_active = true;
-          has_wp = true;
+          int row_ins    = parse_int_from_json(latest_next_step, "row");
+          int col_ins    = parse_int_from_json(latest_next_step, "col");
+          int height_ins = parse_int_from_json(latest_next_step, "height");
+          std::string dir_ins = parse_direction_from_json(latest_next_step);
+          if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
+          {
+            update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
+          }
+          goal_active   = true;
+          has_wp        = true;
           wp_processing = false;
         }
 
@@ -1012,39 +1086,33 @@ private:
       {
       case ST2_IDLE:
       {
-        // if (goal_done)
-        // {
-
-        //   goal_done = false;
-
-        //   RCLCPP_INFO(this->get_logger(), "FINAL STATE READY");
-
-        //   st2_state = ST2_AFTER_CLIMB;
-        //   break;
-        // }
-
         if (has_wp && !wp_processing)
         {
           wp_processing = true;
 
-          double dx = targetX_world - currentX;
-          double dy = targetY_world - currentY;
+          double dx   = targetX_world - currentX;
+          double dy   = targetY_world - currentY;
           double dist = sqrt(dx * dx + dy * dy);
 
           if (dist < 0.2) // sudah di WP ini, skip
           {
-            // RCLCPP_INFO(this->get_logger(), "Skip WP, robot sudah di sini");
-
             std_msgs::msg::Bool wp_msg;
             wp_msg.data = true;
             wp_reached2_pub->publish(wp_msg);
 
             wp_processing = false;
-            has_wp = false;
+            has_wp        = false;
+            RCLCPP_INFO(this->get_logger(), "ST2 IDLE: skip WP, robot sudah di posisi");
+          }
+          else if (need_rotate)
+          {
+            st2_state = ST2_ROTATE; // rotate dulu sebelum gerak
+            RCLCPP_INFO(this->get_logger(), "ST2 IDLE: perlu rotate → ST2_ROTATE");
           }
           else
           {
-            st2_state = ST2_STRAIGHT_CLIMB;
+            st2_state = ST2_STRAIGHT_CLIMB; // langsung gerak
+            RCLCPP_INFO(this->get_logger(), "ST2 IDLE: langsung maju → ST2_STRAIGHT_CLIMB");
           }
         }
 
@@ -1055,30 +1123,35 @@ private:
       {
         double dx = targetX_world - currentX;
         double dy = targetY_world - currentY;
-        double dist = sqrt(dx * dx + dy * dy);
 
-        RCLCPP_INFO(this->get_logger(), "CURRENT : %.2f %.2f", currentX, currentY);
+        double dist = std::sqrt(dx * dx + dy * dy);
 
-        RCLCPP_INFO(this->get_logger(), "TARGET  : %.2f %.2f", targetX_world, targetY_world);
+        double yaw = heading;
+        yaw = std::atan2(std::sin(yaw), std::cos(yaw));
 
-        RCLCPP_INFO(this->get_logger(), "DIST : %.3f", dist);
+        // WORLD → ROBOT FRAME transform
+        double dx_r = std::cos(yaw) * dx + std::sin(yaw) * dy;
+        double dy_r = -std::sin(yaw) * dx + std::cos(yaw) * dy;
 
-        // RCLCPP_INFO(this->get_logger(), "dist to WP: %.3f", dist);
+        RCLCPP_INFO(this->get_logger(),
+          "ST2 dx=%.2f dy=%.2f dx_r=%.2f dy_r=%.2f dist=%.2f reverse=%d",
+          dx, dy, dx_r, dy_r, dist, need_reverse);
 
+        // safety check
         if (dist > 3.0)
         {
-          RCLCPP_WARN(this->get_logger(), "WAYPOINT ERROR / DRIFT TERLALU BESAR");
-
-          // cmd.linear.x = 0.0;
-          // cmd.angular.z = 0.0;
-
-          has_wp = false;
+          RCLCPP_WARN(this->get_logger(), "ST2: waypoint terlalu jauh / error drift");
+          has_wp    = false;
           st2_state = ST2_IDLE;
           break;
         }
 
+        // arrival condition
         if (dist < 0.25)
         {
+          cmd.linear.x  = 0.0;
+          cmd.linear.y  = 0.0;
+          cmd.angular.z = 0.0;
 
           if (need_climb)
           {
@@ -1086,25 +1159,27 @@ private:
           }
           else
           {
-            RCLCPP_INFO(this->get_logger(), "WP reached ");
-
-            // FIX Bug3: publish wp_reached agar GUI tahu WP selesai → kirim next_step
             std_msgs::msg::Bool wp_msg;
             wp_msg.data = true;
             wp_reached2_pub->publish(wp_msg);
-            RCLCPP_INFO(this->get_logger(), "Published /meihua/wp_reached → waiting next step from GUI");
 
-            has_wp = false;
-            goal_active = false;
+            has_wp        = false;
+            goal_active   = false;
             wp_processing = false;
+            need_reverse  = false;
+            need_rotate   = false;
 
             st2_state = ST2_IDLE;
+            RCLCPP_INFO(this->get_logger(), "ST2 WP REACHED");
           }
           break;
         }
-        cmd.linear.x = 0.4;
-        cmd.linear.y = 0.0;
-        cmd.angular.z = -controlled_angle;
+
+        // motion: maju atau mundur tergantung need_reverse
+        double speed = need_reverse ? -0.3 : 0.3;
+        cmd.linear.x  = speed * dx_r;
+        cmd.linear.y  = speed * dy_r;
+        cmd.angular.z = 0.0;
 
         break;
       }
@@ -1187,20 +1262,83 @@ private:
         break;
       }
 
+      case ST2_ROTATE:
+      {
+        yaw_error = normalize_angle(rotate_target_yaw - heading);
+
+        RCLCPP_INFO(this->get_logger(),
+          "ST2 ROTATE: heading=%.3f target=%.3f error=%.3f",
+          heading, rotate_target_yaw, yaw_error);
+
+        if (fabs(yaw_error) < 0.05) // toleransi ~3 derajat
+        {
+          cmd.linear.x  = 0.0;
+          cmd.linear.y  = 0.0;
+          cmd.angular.z = 0.0;
+          need_rotate   = false;
+
+          RCLCPP_INFO(this->get_logger(), "ST2 ROTATE DONE → %s",
+            need_reverse ? "mundur" : "maju");
+
+          st2_state = ST2_STRAIGHT_CLIMB;
+        }
+        else
+        {
+          cmd.linear.x  = 0.0;
+          cmd.linear.y  = 0.0;
+          cmd.angular.z = std::copysign(0.3, yaw_error);
+        }
+
+        break;
+      }
+
       case ST2_POST_CLIMB:
       {
         double dx = currentX - start_x_after_climb;
         double dy = currentY - start_y_after_climb;
         double dist = sqrt(dx * dx + dy * dy);
+        double angle_st2 = atan2(dy, dx);
 
         if (dist < 0.3)
         {
-          cmd.linear.x = 0.4;
+          // cmd.linear.x = 0.2;
+          // cmd.linear.y = 0.0;
+
+          if (dist < 0.01)
+          {
+            cmd.linear.x = 0.2;
+            cmd.linear.y = 0.0;
+          }
+          else
+          {
+            cmd.linear.x = 0.2 * cos(angle_st2);
+            cmd.linear.y = 0.2 * sin(angle_st2);
+          }
+
+          cmd.angular.z = -controlled_angle;
+
+          // cmd.linear.x = 0.2 * cos(angle_st2);
+          // cmd.linear.y = 0.2 * sin(angle_st2);
         }
         else
         {
           cmd.linear.x = 0.0;
+          cmd.linear.y = 0.0;
+          cmd.angular.z = 0.0;
 
+          double raw_odom_x = currentX - odom_offset_x;
+          double raw_odom_y = currentY - odom_offset_y;
+
+          odom_offset_x = targetX_world - raw_odom_x;
+          odom_offset_y = targetY_world - raw_odom_y;
+
+          RCLCPP_INFO(
+              this->get_logger(),
+              "ODOM SYNC -> current dianggap di (%.2f, %.2f)",
+              targetX_world,
+              targetY_world);
+
+          // climb_finished = true;
           std_msgs::msg::Bool wp_msg;
           wp_msg.data = true;
           wp_reached2_pub->publish(wp_msg);
@@ -1210,7 +1348,9 @@ private:
           wp_processing = false;
 
           climb_finished = true;
-          st2_state = ST2_DONE;
+          st2_state = ST2_IDLE;
+          ;
+          // st2_state = ST2_DONE;
         }
 
         RCLCPP_INFO(this->get_logger(), "ST2 POST CLIMB");

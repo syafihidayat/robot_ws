@@ -256,7 +256,7 @@ class MeihuaApp:
         self.root = root
         print("1. Masuk __init__")
 
-        self.root.title("🌸 Meihua Forest Planner — ABU Robocon 2026 + ROS2")
+        self.root.title(" Meihua Forest Planner — ABU Robocon 2026 + ROS2")
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)

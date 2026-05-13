@@ -166,6 +166,7 @@ private:
     // ST2_MOVE,
     // ST2_ADVANCE,
     ST2_AFTER_CLIMB,
+    ST2_ROTATE,
     // ST2_SLOW,
     ST2_STOP_SENSOR,
     ST2_POST_CLIMB,
@@ -246,6 +247,7 @@ private:
   double odom_offset_y = 0.0;
 
   Stage2SubState st2_state = ST2_IDLE;
+
   // double st2_timer_start = 0.0;
   // int st2_target_dir = 0;                             // 0=kanan,1=atas,2=kiri,3=bawah
   // int st2_current_grid_x = 1, st2_current_grid_y = 0; // posisi awal setelah climb
@@ -261,6 +263,13 @@ private:
   double st2_timer_start;
   bool st2_short_odom_init;
   double st2_short_start_x, st2_short_start_y;
+  
+   // ── Stage 2 rotate & reverse ─────────────────────────────────────────────
+  bool need_rotate = false;
+  bool need_reverse = false;
+  double rotate_target_yaw = 0.0;
+  double yaw_error = 0.0;
+  int current_grid_height = 200;
 
   double normalize_angle(double angle)
   {
@@ -611,11 +620,12 @@ private:
 
     int row = parse_int_from_json(msg->data, "row");
     int col = parse_int_from_json(msg->data, "col");
+    int height = parse_int_from_json(msg->data, "height");
     std::string dir = parse_direction_from_json(msg->data);
 
     if (!dir.empty() && row >= 0 && col >= 0)
     {
-      update_target_from_step(row, col);
+      update_target_from_step(row, col, height, dir);
       // update_target_from_step(dir);
       has_wp = true;
       goal_active = true;
@@ -702,7 +712,7 @@ private:
   const double GRID_ORIGIN_X = 1.35;
   const double GRID_ORIGIN_Y = -1.25;
 
-  void update_target_from_step(int target_row, int target_col)
+  void update_target_from_step(int target_row, int target_col, int target_height, const std::string &dir)
   {
     // const double CELL_SIZE = 1.2; // meter per grid
 
@@ -720,11 +730,54 @@ private:
     targetY_world = -(GRID_ORIGIN_Y + (target_col * CELL_SIZE));
     targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
 
+    int height_diff = target_height - current_grid_height;
+
+    if(height_diff < 0)
+    {
+      need_reverse = true;
+      need_rotate = true;
+
+      if(dir == "DOWN")  rotate_target_yaw = M_PI;
+      else if(dir == "UP")  rotate_target_yaw = 0.0;
+      else if(dir == "RIGHT") rotate_target_yaw = -M_PI/2;
+      else if(dir == "LEFT") rotate_target_yaw =  M_PI/2;  
+
+      RCLCPP_INFO(this->get_logger(), "TURUN: rotate belakang ke target, mundur. yaw=%.2f", rotate_target_yaw);
+
+    }
+    else if(dir == "DOWN")
+    {
+
+      need_reverse = false;
+      need_rotate = false;
+
+      RCLCPP_INFO(this->get_logger(), "NAIK SOUTH: langsung maju");
+
+    }
+
+    else
+    {
+      need_reverse = false;
+      need_rotate = true;
+
+      if(dir == "UP")  rotate_target_yaw = M_PI;
+      else if(dir == "RIGHT") rotate_target_yaw = M_PI/2;
+      else if(dir == "LEFT") rotate_target_yaw = -M_PI/2;  
+
+      RCLCPP_INFO(this->get_logger(), "NAIK %s: rotate depan ke target. yaw=%.2f", dir.c_str(), rotate_target_yaw);
+
+    }
+
     current_grid_row = target_row;
     current_grid_col = target_col;
+    current_grid_height = target_height;
 
-    RCLCPP_INFO(this->get_logger(), "Target grid(%d,%d) → world(%.2f, %.2f)", target_row, target_col, targetX_world, targetY_world);
+    // RCLCPP_INFO(this->get_logger(), "Target grid(%d,%d) → world(%.2f, %.2f)", target_row, target_col, targetX_world, targetY_world);
+
+    RCLCPP_INFO(this->get_logger(),"Target grid(%d,%d) h=%d dir=%s → world(%.2f,%.2f) reverse=%d rotate=%d target_yaw=%.2f",target_row, target_col, target_height, dir.c_str(),
+    targetX_world, targetY_world, need_reverse, need_rotate, rotate_target_yaw);
   }
+  
 
   // void update_target_from_step(const std::string &step)
   // {
@@ -834,7 +887,7 @@ private:
       RCLCPP_INFO(this->get_logger(), "dx: %f dy: %f", dx, dy);
       // RCLCPP_INFO(this->get_logger(), "posisi y", currentY);
 
-      if (distance > 0.03)
+      if (distance > 0.05)
       {
 
         // if(stage2_flag)
@@ -862,8 +915,8 @@ private:
       {
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
-        cmd.angular.z = -controlled_angle;
-        // cmd.angular.z = 0.0;
+        // cmd.angular.z = -controlled_angle;
+        cmd.angular.z = 0.0;
 
         RCLCPP_INFO(this->get_logger(), "holding position");
 
@@ -932,12 +985,16 @@ private:
         // current_state = MOVING_TO_TARGET;
         target_reached_flag = false;
         RCLCPP_INFO(this->get_logger(), "Resuming from pause");
+        RCLCPP_INFO(this->get_logger(), "posisi x %f", currentX);
+        RCLCPP_INFO(this->get_logger(), "posisi y %f\n", currentY);
         // swing_reset_done = false;
       }
       else
       {
 
         RCLCPP_INFO(this->get_logger(), " PAUSED - Waiting for obstacle to clear...");
+        RCLCPP_INFO(this->get_logger(), "posisi x %f", currentX);
+        RCLCPP_INFO(this->get_logger(), "posisi y %f\n", currentY);
       }
     }
     break;
@@ -1044,9 +1101,13 @@ private:
           // update_target_from_step(latest_next_step);
           int row_ins = parse_int_from_json(latest_next_step, "row");
           int col_ins = parse_int_from_json(latest_next_step, "col");
-          if (row_ins >= 0 && col_ins >= 0)
+          int height_ins = parse_int_from_json(latest_next_step, "height");
+          std::string dir_ins = parse_direction_from_json(latest_next_step);
+
+
+          if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
           {
-            update_target_from_step(row_ins, col_ins);
+            update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
           }
           goal_active = true;
           has_wp = true;
@@ -1121,9 +1182,17 @@ private:
             wp_processing = false;
             has_wp = false;
           }
+          else if(need_rotate)
+          {
+            st2_state = ST2_ROTATE;
+            RCLCPP_INFO(this->get_logger(), "ST2 IDLE: perlu rotate → ST2_ROTATE");
+
+          }
           else
           {
             st2_state = ST2_STRAIGHT_CLIMB;
+            RCLCPP_INFO(this->get_logger(), "ST2 IDLE: langsung maju → ST2_STRAIGHT_CLIMB");
+
           }
         }
 
@@ -1184,10 +1253,18 @@ private:
           break;
         }
 
-        // === MOTION CONTROL (FIX UTAMA) ===
-        cmd.linear.x = 0.3 * dx_r;
-        cmd.linear.y = 0.3 * dy_r;
+        if(need_reverse)
+        {
 
+          cmd.linear.x = -0.3;
+        }
+        else
+        {
+          // === MOTION CONTROL (FIX UTAMA) ===
+          cmd.linear.x = 0.4 * dx_r;
+          cmd.linear.y = 0.4 * dy_r;
+          
+        }
         // IMPORTANT: jangan pakai angular PID di translasi
         cmd.angular.z = 0.0;
 
@@ -1272,6 +1349,37 @@ private:
         break;
       }
 
+
+      // bool descend_published = false;
+      case ST2_ROTATE:
+      {
+
+        yaw_error = normalize_angle(rotate_target_yaw - heading);
+
+        RCLCPP_INFO(this->get_logger(),"ST2 ROTATE: heading=%.3f target=%.3f error=%.3f",
+        heading, rotate_target_yaw, yaw_error);
+
+        if(fabs(yaw_error) < 0.05)
+        {
+          cmd.linear.x = 0.0;
+          cmd.linear.y = 0.0;
+          cmd.angular.z = 0.0;
+
+
+          RCLCPP_INFO(this->get_logger(), "ST2 ROTATE DONE → %s",need_reverse ? "mundur" : "maju");
+
+          // st2_state = ST2_STRAIGHT_CLIMB;
+        }
+        else
+        {
+          cmd.linear.x = 0.0;
+          cmd.linear.y = 0.0;
+          cmd.angular.z = std::copysign(0.2, yaw_error);
+        }
+
+        break;
+      }
+
       case ST2_POST_CLIMB:
       {
         double dx = currentX - start_x_after_climb;
@@ -1329,7 +1437,7 @@ private:
 
           climb_finished = true;
           st2_state = ST2_IDLE;
-          ;
+          
           // st2_state = ST2_DONE;
         }
 
