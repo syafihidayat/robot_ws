@@ -6,6 +6,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/u_int16.hpp>
 #include "gui_kfs_msgs/msg/kfs_decision.hpp"
+#include <std_msgs/msg/float32_multi_array.hpp>
 #include <pid.hpp>
 #include <convertion.hpp>
 #include <cmath>
@@ -32,7 +33,7 @@ public:
     pose_sub = this->create_subscription<geometry_msgs::msg::Point>("/pose", 10,
                                                                     std::bind(&Movement::pose_callback, this, std::placeholders::_1));
 
-    proxy_sub = this->create_subscription<std_msgs::msg::Bool>("proxydata", 10,
+    proxy_sub = this->create_subscription<std_msgs::msg::Bool>("/proxydata", 10,
                                                                std::bind(&Movement::proxy_callback, this, std::placeholders::_1));
 
     waypoint_backend_sub = this->create_subscription<geometry_msgs::msg::Point>("/planner/waypoint", 10,
@@ -85,6 +86,18 @@ public:
 
     next_step_sub = this->create_subscription<std_msgs::msg::String>("/meihua/next_step", 10,
                                                                      std::bind(&Movement::next_step_callback, this, std::placeholders::_1));
+
+    descend_pub = this->create_publisher<std_msgs::msg::Bool>("/start_descend", 10);
+
+    // descend_lifter_up_pub  =this->create_publisher<std_msgs::msg::Bool>("/lifter_up_after_down", 10);
+
+    descend_lifter_up_sub = this->create_subscription<std_msgs::msg::Bool>("/descend_lifter_up_after_down", 10,
+                                                                           std::bind(&Movement::descend_lifter_up_callback, this, std::placeholders::_1));
+
+    checking_input_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>("/checking_input", 10,
+                                                                                     std::bind(&Movement::checking_input_callback, this, std::placeholders::_1));
+
+    allow_lifter_up_pub = this->create_publisher<std_msgs::msg::Bool>("/allow_lifter_up", 10);
 
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::control_loop, this));
 
@@ -162,17 +175,13 @@ private:
     ST2_IDLE,
     // ST2_HOLD,
     ST2_STRAIGHT_CLIMB,
-    // ST2_CHECK_DIR,
-    // ST2_MOVE,
-    // ST2_ADVANCE,
     ST2_AFTER_CLIMB,
     ST2_ROTATE,
-    // ST2_SLOW,
     ST2_STOP_SENSOR,
     ST2_POST_CLIMB,
     ST2_WAIT_LIFTER,
-    // ST2_WP_DONE,
-    // ST2_ALIGN,
+    ST2_WAIT_LIFTER_UP_CONFIRM,
+    ST2_REVERSE_AFTER_LIFTER,
     ST2_DONE
   };
 
@@ -263,13 +272,24 @@ private:
   double st2_timer_start;
   bool st2_short_odom_init;
   double st2_short_start_x, st2_short_start_y;
-  
-   // ── Stage 2 rotate & reverse ─────────────────────────────────────────────
+
+  // ── Stage 2 rotate & reverse ─────────────────────────────────────────────
   bool need_rotate = false;
   bool need_reverse = false;
   double rotate_target_yaw = 0.0;
+  bool proxy_currently_detected = false;
+  bool proxy_stop_triggered = false;
   double yaw_error = 0.0;
   int current_grid_height = 200;
+  bool descend_published = false;
+  bool lifter_up_confirmed = false;
+  bool waiting_for_lifter_up_confirm = false;
+  bool proxy_was_seen = false;
+  bool has_pending_step = false;
+  int pending_row = -1, pending_col = -1, pending_height = -1;
+  std::string pending_dir = "";
+  double st2_reverse_start_time = 0.0;
+  int pitch_stable_count = 0;
 
   double normalize_angle(double angle)
   {
@@ -349,47 +369,23 @@ private:
   {
 
     bool detected = msg->data;
-    bool new_obstacle = !detected;
 
-    if (new_obstacle != sensor_obstacle)
-    {
-      RCLCPP_INFO(this->get_logger(), "OBSTACLE FLAG: %s", new_obstacle ? "STOP" : "GO");
-    }
-
-    sensor_obstacle = !detected;
+    // if(detected)
+    // {
+    //   RCLCPP_INFO(this->get_logger(), "Proxy terdeteksi");
+    // }
+    // else
+    // {
+    //   RCLCPP_INFO(this->get_logger(), "Proxy tidak terdeteksi");
+    // }
 
     if (detected != last_detected)
     {
       RCLCPP_INFO(this->get_logger(), "SENSOR RAW: %s", detected ? "TRUE" : "FALSE");
     }
 
-    if (!detected)
-    {
-      obstacle_lock = true;
-    }
-
     last_detected = detected;
-
-    std_msgs::msg::Bool out_msg;
-    out_msg.data = msg->data;
-    proxy_true_pub->publish(out_msg);
-
-    if (sensor_obstacle && !ignore_obstacle)
-    {
-
-      if (current_state == MOVING_TO_TARGET)
-      {
-        previous_state_before_pause = current_state;
-        current_state = PAUSED_STAGE1;
-
-        if (previous_state_before_pause == MOVING_TO_TARGET)
-        {
-          RCLCPP_INFO(this->get_logger(), "Stage 1 PAUSED");
-        }
-      }
-    }
-
-    was_obstacle = sensor_obstacle;
+    proxy_currently_detected = detected;
   }
 
   double tof_distance = 0;
@@ -439,6 +435,25 @@ private:
     if (msg->data)
     {
       RCLCPP_INFO(this->get_logger(), "IR DETECTED");
+    }
+  }
+
+  float hardware_pitch = 0.0;
+
+  void checking_input_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+  {
+    if (msg->data.size() > 6)
+    {
+      hardware_pitch = msg->data[5];
+
+      // RCLCPP_INFO(this->get_logger(),
+      //       "HW | rps1=%.2f rps2=%.2f rps3=%.2f rps4=%.2f",
+      //       msg->data[0],  // rps1
+      //       msg->data[1],  // rps2
+      //       msg->data[2],  // rps3
+      //       msg->data[3]); // rps4
+      // msg->data[5],  // pitch
+      // msg->data[6]); // pos lifter
     }
   }
 
@@ -514,7 +529,7 @@ private:
     if (is_stage2)
     {
       // hanya trigger saat lagi jalan
-      if (st2_state == ST2_STRAIGHT_CLIMB ||
+      if ((st2_state == ST2_STRAIGHT_CLIMB && !need_reverse) ||
           st2_state == ST2_AFTER_CLIMB)
       {
         st2_state = ST2_STOP_SENSOR;
@@ -574,17 +589,60 @@ private:
     //   current_state = WAIT_LIFTER;
     // }
 
-    if (!msg->data)
-      return;
+    // if (!msg->data)
+    //   return;
 
-    if (!is_stage2)
+    if (msg->data)
     {
-      current_state = WAIT_LIFTER;
+      if (!is_stage2)
+      {
+        current_state = WAIT_LIFTER;
+      }
+      else
+      {
+        if (st2_state == ST2_REVERSE_AFTER_LIFTER || st2_state == ST2_WAIT_LIFTER_UP_CONFIRM || st2_state == ST2_WAIT_LIFTER)
+        {
+          RCLCPP_WARN(this->get_logger(), "wait_lifter ignored, sedang REVERSE/WAIT_CONFIRM");
+          return;
+        }
+
+        if (need_reverse && !proxy_was_seen && !proxy_stop_triggered)
+        {
+          RCLCPP_WARN(this->get_logger(), "wait_lifter ignored: proxy belum terdeteksi");
+          return;
+        }
+
+        st2_state = ST2_WAIT_LIFTER;
+        RCLCPP_INFO(this->get_logger(), "PROXY → ST2_WAIT_LIFTER (mundur)");
+
+        // RCLCPP_WARN(this->get_logger(), "wait_lifter ignored, state=%d need_reverse=%d", (int)st2_state, need_reverse);
+        // return;
+
+        // RCLCPP_INFO(this->get_logger(), "PROXY → ST2_WAIT_LIFTER");
+      }
     }
-    else
-    {
-      st2_state = ST2_WAIT_LIFTER;
-    }
+    // if(msg->data)
+    // {
+    //   if(!is_stage2)
+    //   {
+    //     current_state = WAIT_LIFTER;
+    //   }
+    //   else if(st2_state == ST2_STRAIGHT_CLIMB && need_reverse)
+    //   {
+    //     st2_state = ST2_WAIT_LIFTER;
+    //     RCLCPP_INFO(this->get_logger(), "MUNDUR PAUSE → nunggu lifter turun");
+    //   }
+
+    // }
+    // else
+    // {
+    //   waiting_lifter = false;
+    //   if(is_stage2 && st2_state == ST2_WAIT_LIFTER)
+    //   {
+    //     st2_state = ST2_STRAIGHT_CLIMB;
+    //     RCLCPP_INFO(this->get_logger(), "LIFTER DONE → lanjut mundur");
+    //   }
+    // }
   }
 
   void reached_Astar_callback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -621,10 +679,27 @@ private:
     int row = parse_int_from_json(msg->data, "row");
     int col = parse_int_from_json(msg->data, "col");
     int height = parse_int_from_json(msg->data, "height");
+
     std::string dir = parse_direction_from_json(msg->data);
 
     if (!dir.empty() && row >= 0 && col >= 0)
     {
+
+      if (st2_state == ST2_REVERSE_AFTER_LIFTER ||
+          st2_state == ST2_WAIT_LIFTER ||
+          st2_state == ST2_WAIT_LIFTER_UP_CONFIRM ||
+          st2_state == ST2_ROTATE ||
+          st2_state == ST2_STRAIGHT_CLIMB)
+      {
+        pending_row = row;
+        pending_col = col;
+        pending_height = height;
+        pending_dir = dir;
+        has_pending_step = true;
+        RCLCPP_WARN(this->get_logger(), "next_step ignored, sedang proses mundur/lifter");
+        return;
+      }
+
       update_target_from_step(row, col, height, dir);
       // update_target_from_step(dir);
       has_wp = true;
@@ -633,6 +708,10 @@ private:
       wp_done_sent = false;
       climb_finished = false;
       goal_done = false;
+      descend_published = false;
+      waiting_lifter = false;
+      proxy_was_seen = false;
+      proxy_stop_triggered = false;
       st2_state = ST2_IDLE;
 
       RCLCPP_INFO(this->get_logger(), "Parsed direction: %s → target set", dir.c_str());
@@ -732,27 +811,29 @@ private:
 
     int height_diff = target_height - current_grid_height;
 
-    if(height_diff < 0)
+    if (height_diff < 0)
     {
       need_reverse = true;
       need_rotate = true;
 
-      if(dir == "DOWN")  rotate_target_yaw = M_PI;
-      else if(dir == "UP")  rotate_target_yaw = 0.0;
-      else if(dir == "RIGHT") rotate_target_yaw = -M_PI/2;
-      else if(dir == "LEFT") rotate_target_yaw =  M_PI/2;  
+      if (dir == "DOWN")
+        rotate_target_yaw = M_PI;
+      else if (dir == "UP")
+        rotate_target_yaw = 0.0;
+      else if (dir == "RIGHT")
+        rotate_target_yaw = -M_PI / 2;
+      else if (dir == "LEFT")
+        rotate_target_yaw = M_PI / 2;
 
       RCLCPP_INFO(this->get_logger(), "TURUN: rotate belakang ke target, mundur. yaw=%.2f", rotate_target_yaw);
-
     }
-    else if(dir == "DOWN")
+    else if (dir == "DOWN")
     {
 
       need_reverse = false;
       need_rotate = false;
 
       RCLCPP_INFO(this->get_logger(), "NAIK SOUTH: langsung maju");
-
     }
 
     else
@@ -760,12 +841,14 @@ private:
       need_reverse = false;
       need_rotate = true;
 
-      if(dir == "UP")  rotate_target_yaw = M_PI;
-      else if(dir == "RIGHT") rotate_target_yaw = M_PI/2;
-      else if(dir == "LEFT") rotate_target_yaw = -M_PI/2;  
+      if (dir == "UP")
+        rotate_target_yaw = M_PI;
+      else if (dir == "RIGHT")
+        rotate_target_yaw = M_PI / 2;
+      else if (dir == "LEFT")
+        rotate_target_yaw = -M_PI / 2;
 
       RCLCPP_INFO(this->get_logger(), "NAIK %s: rotate depan ke target. yaw=%.2f", dir.c_str(), rotate_target_yaw);
-
     }
 
     current_grid_row = target_row;
@@ -774,10 +857,38 @@ private:
 
     // RCLCPP_INFO(this->get_logger(), "Target grid(%d,%d) → world(%.2f, %.2f)", target_row, target_col, targetX_world, targetY_world);
 
-    RCLCPP_INFO(this->get_logger(),"Target grid(%d,%d) h=%d dir=%s → world(%.2f,%.2f) reverse=%d rotate=%d target_yaw=%.2f",target_row, target_col, target_height, dir.c_str(),
-    targetX_world, targetY_world, need_reverse, need_rotate, rotate_target_yaw);
+    RCLCPP_INFO(this->get_logger(), "Target grid(%d,%d) h=%d dir=%s → world(%.2f,%.2f) reverse=%d rotate=%d target_yaw=%.2f", target_row, target_col, target_height, dir.c_str(),
+                targetX_world, targetY_world, need_reverse, need_rotate, rotate_target_yaw);
   }
-  
+
+  bool descend_lifter_up_received = false;
+
+  void descend_lifter_up_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (msg->data)
+    {
+
+      RCLCPP_WARN(this->get_logger(), "DESCEND LIFTER UP CALLBACK | waiting_confirm=%d lifter_confirmed=%d",
+                  waiting_for_lifter_up_confirm, lifter_up_confirmed);
+
+      if (waiting_for_lifter_up_confirm)
+      {
+        lifter_up_confirmed = true;
+        RCLCPP_INFO(this->get_logger(), "LIFTER NAIK KONFIRMASI → WP bisa done");
+      }
+      else
+      {
+        descend_lifter_up_received = true;
+        RCLCPP_INFO(this->get_logger(), "DESCEND LIFTER UP → lanjut mundur");
+      }
+      // descend_lifter_up_received = true;
+
+      // if(waiting_for_lifter_up_confirm)
+      // {
+      //   lifter_up_confirmed = true;
+      // }
+    }
+  }
 
   // void update_target_from_step(const std::string &step)
   // {
@@ -845,12 +956,6 @@ private:
       RCLCPP_INFO(this->get_logger(), "posisi y %f\n", currentY);
       return;
     }
-
-    // if (limit_active)
-    // {
-    //   cmd.linear.x = 0.0;
-    //   cmd.angular.z = 0.0;
-    // }
 
     switch (current_state)
     {
@@ -1001,7 +1106,7 @@ private:
 
     case STRAIGHT_FOR_CLIMB:
     {
-      cmd.linear.x = 0.5;
+      cmd.linear.x = 0.4;
       cmd.linear.y = 0.0;
       // cmd.angular.z = 0.0;
       cmd.angular.z = -controlled_angle;
@@ -1104,7 +1209,6 @@ private:
           int height_ins = parse_int_from_json(latest_next_step, "height");
           std::string dir_ins = parse_direction_from_json(latest_next_step);
 
-
           if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
           {
             update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
@@ -1182,17 +1286,15 @@ private:
             wp_processing = false;
             has_wp = false;
           }
-          else if(need_rotate)
+          else if (need_rotate)
           {
             st2_state = ST2_ROTATE;
             RCLCPP_INFO(this->get_logger(), "ST2 IDLE: perlu rotate → ST2_ROTATE");
-
           }
           else
           {
             st2_state = ST2_STRAIGHT_CLIMB;
             RCLCPP_INFO(this->get_logger(), "ST2 IDLE: langsung maju → ST2_STRAIGHT_CLIMB");
-
           }
         }
 
@@ -1232,7 +1334,11 @@ private:
         // === arrival condition ===
         if (dist < 0.25)
         {
-          if (need_climb)
+          if (need_reverse)
+          {
+            st2_state = ST2_WAIT_LIFTER;
+          }
+          else if (need_climb && !need_reverse)
           {
             st2_state = ST2_WAIT_LIFTER;
           }
@@ -1253,21 +1359,177 @@ private:
           break;
         }
 
-        if(need_reverse)
+        if (need_reverse)
         {
+          if (proxy_currently_detected)
+          {
+            proxy_was_seen = true;
+            RCLCPP_WARN(this->get_logger(), "PROXY TRUE DETECTED saat mundur"); // ← tambah ini
+          }
 
-          cmd.linear.x = -0.3;
+          if (!proxy_currently_detected && proxy_was_seen)
+          {
+            cmd.linear.x = 0.0;
+            cmd.linear.y = 0.0;
+            cmd.angular.z = 0.0;
+
+            RCLCPP_WARN(this->get_logger(),
+                        "PROXY HILANG: was_seen=%d stop_triggered=%d", // ← tambah ini
+                        proxy_was_seen, proxy_stop_triggered);
+
+            if (!proxy_stop_triggered)
+            {
+              proxy_stop_triggered = true;
+              proxy_was_seen = false;
+
+              std_msgs::msg::Bool descend_msg;
+              descend_msg.data = true;
+              descend_pub->publish(descend_msg);
+
+              RCLCPP_INFO(this->get_logger(), "PROXY TIDAK TERDETEKSI -> ROBOT BERHENTI (saat mundur)");
+              st2_state = ST2_WAIT_LIFTER;
+            }
+          }
+          else if (!proxy_stop_triggered)
+          {
+            cmd.linear.x = -0.3;
+          }
+          // else
+          // {
+
+          //   proxy_stop_triggered = false;
+          //   cmd.linear.x = -0.3;
+          //   // cmd.angular.z = -controlled_angle;
+          // }
         }
         else
         {
           // === MOTION CONTROL (FIX UTAMA) ===
           cmd.linear.x = 0.4 * dx_r;
           cmd.linear.y = 0.4 * dy_r;
-          
         }
         // IMPORTANT: jangan pakai angular PID di translasi
         cmd.angular.z = 0.0;
 
+        break;
+      }
+
+      case ST2_REVERSE_AFTER_LIFTER:
+      {
+        cmd.linear.x = -0.2;
+        cmd.angular.z = 0.0;
+        // cmd.angular.z = -controlled_angle;
+
+        RCLCPP_INFO(this->get_logger(), "MUNDUR TUNGGU PITCH > 2 | pitch=%.2f", hardware_pitch);
+        RCLCPP_INFO(this->get_logger(),
+                    "MUNDUR | pitch=%.2f proxy_was_seen=%d proxy_currently=%d proxy_stop=%d st2=%d",
+                    hardware_pitch, proxy_was_seen, proxy_currently_detected, proxy_stop_triggered, (int)st2_state);
+
+        if (st2_reverse_start_time == 0.0)
+        {
+          st2_reverse_start_time = this->now().seconds();
+        }
+
+        double elapsed = this->now().seconds() - st2_reverse_start_time;
+
+        // static int pitch_stable_count = 0;
+
+        if (hardware_pitch > 2.0)
+          pitch_stable_count++;
+        else
+          pitch_stable_count = 0;
+
+        if (pitch_stable_count >= 10 && elapsed > 1.0)
+        {
+          pitch_stable_count = 0;
+
+          std_msgs::msg::Bool allow_msg;
+          allow_msg.data = true;
+          allow_lifter_up_pub->publish(allow_msg);
+
+          targetX_world = currentX;
+          targetY_world = currentY;
+
+          proxy_was_seen = false;
+          // proxy_stop_triggered = false;
+
+          waiting_for_lifter_up_confirm = true;
+          lifter_up_confirmed = false;
+
+          st2_state = ST2_WAIT_LIFTER_UP_CONFIRM;
+
+          // st2_state = ST2_STRAIGHT_CLIMB;
+          RCLCPP_INFO(this->get_logger(), "PITCH > 2 -> IZIN LIFTER NAIK -> LANJUT MUNDUR");
+        }
+
+        // if (hardware_pitch > 2.0 && elapsed > 1.0)
+        // {
+        //   std_msgs::msg::Bool allow_msg;
+        //   allow_msg.data = true;
+        //   allow_lifter_up_pub->publish(allow_msg);
+
+        //   targetX_world = currentX;
+        //   targetY_world = currentY;
+
+        //   proxy_was_seen = false;
+        //   // proxy_stop_triggered = false;
+
+        //   waiting_for_lifter_up_confirm = true;
+        //   lifter_up_confirmed = false;
+
+        //   st2_state = ST2_WAIT_LIFTER_UP_CONFIRM;
+
+        //   // st2_state = ST2_STRAIGHT_CLIMB;
+        //   RCLCPP_INFO(this->get_logger(), "PITCH > 2 -> IZIN LIFTER NAIK -> LANJUT MUNDUR");
+        // }
+
+        break;
+      }
+
+      case ST2_WAIT_LIFTER_UP_CONFIRM:
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+
+        RCLCPP_INFO(this->get_logger(), "MENUNGGU KONFIRMASI LIFTER NAIK SELESAI...");
+
+        if (lifter_up_confirmed)
+        {
+          lifter_up_confirmed = false;
+          waiting_for_lifter_up_confirm = false;
+
+          if (has_pending_step)
+          {
+            update_target_from_step(pending_row, pending_col, pending_height, pending_dir);
+            has_wp = true;
+            goal_active = true;
+            wp_processing = false;
+            wp_done_sent = false;
+            climb_finished = false;
+            goal_done = false;
+            descend_published = false;
+            waiting_lifter = false;
+            proxy_was_seen = false;
+            proxy_stop_triggered = false;
+            has_pending_step = false;
+            RCLCPP_INFO(this->get_logger(), "APPLY PENDING STEP → %s", pending_dir.c_str());
+          }
+          else
+          {
+            std_msgs::msg::Bool wp_msg;
+            wp_msg.data = true;
+            wp_reached2_pub->publish(wp_msg);
+            RCLCPP_INFO(this->get_logger(), "WP REACHED → minta next_step");
+          }
+
+          // targetX_world = currentX;
+          // targetY_world = currentY;
+
+          st2_state = ST2_IDLE;
+          // st2_state = ST2_STRAIGHT_CLIMB;
+          RCLCPP_INFO(this->get_logger(), "LIFTER KONFIRMASI NAIK -> LANJUT");
+        }
         break;
       }
 
@@ -1277,7 +1539,23 @@ private:
         cmd.linear.y = 0.0;
         cmd.angular.z = 0.0;
 
-        RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
+        if (descend_lifter_up_received && need_reverse)
+        {
+          descend_lifter_up_received = false;
+          proxy_stop_triggered = false;
+          proxy_was_seen = false;
+          st2_reverse_start_time = 0.0;  
+          pitch_stable_count = 0;         
+
+          targetX_world = currentX;
+          targetY_world = currentY;
+
+          st2_state = ST2_REVERSE_AFTER_LIFTER;
+
+          RCLCPP_INFO(this->get_logger(), "LIFTER UP DETECTED → lanjut maju mundur");
+        }
+
+        RCLCPP_INFO(this->get_logger(), "WAITING LIFTER IN STAGE 2");
 
         break;
       }
@@ -1349,26 +1627,25 @@ private:
         break;
       }
 
-
       // bool descend_published = false;
       case ST2_ROTATE:
       {
 
         yaw_error = normalize_angle(rotate_target_yaw - heading);
 
-        RCLCPP_INFO(this->get_logger(),"ST2 ROTATE: heading=%.3f target=%.3f error=%.3f",
-        heading, rotate_target_yaw, yaw_error);
+        RCLCPP_INFO(this->get_logger(), "ST2 ROTATE: heading=%.3f target=%.3f error=%.3f",
+                    heading, rotate_target_yaw, yaw_error);
 
-        if(fabs(yaw_error) < 0.05)
+        if (fabs(yaw_error) < 0.05)
         {
           cmd.linear.x = 0.0;
           cmd.linear.y = 0.0;
           cmd.angular.z = 0.0;
+          need_rotate = false;
 
+          st2_state = ST2_STRAIGHT_CLIMB;
 
-          RCLCPP_INFO(this->get_logger(), "ST2 ROTATE DONE → %s",need_reverse ? "mundur" : "maju");
-
-          // st2_state = ST2_STRAIGHT_CLIMB;
+          RCLCPP_INFO(this->get_logger(), "ST2 ROTATE DONE → %s", need_reverse ? "mundur" : "maju");
         }
         else
         {
@@ -1399,8 +1676,11 @@ private:
           }
           else
           {
-            cmd.linear.x = 0.2 * cos(angle_st2);
-            cmd.linear.y = 0.2 * sin(angle_st2);
+            // cmd.linear.x = 0.2 * cos(angle_st2);
+            // cmd.linear.y = 0.2 * sin(angle_st2);
+
+            cmd.linear.x = 0.2;
+            cmd.linear.y = 0.0;
           }
 
           cmd.angular.z = -controlled_angle;
@@ -1437,7 +1717,7 @@ private:
 
           climb_finished = true;
           st2_state = ST2_IDLE;
-          
+
           // st2_state = ST2_DONE;
         }
 
@@ -1445,8 +1725,6 @@ private:
 
         break;
       }
-
-        // ================= HADAP TARGET =================
       }
 
       break;
@@ -1503,6 +1781,11 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wp_reached2_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr climb_done_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wp_done_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr allow_lifter_up_pub;
+  // rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_pub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_sub;
+  rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr checking_input_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_list_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr next_step_sub;
   nav_msgs::msg::Odometry odom_robot_msg;
