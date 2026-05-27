@@ -42,8 +42,8 @@ public:
     gui_sub = this->create_subscription<gui_kfs_msgs::msg::KFSDecision>("kfs_decision", 10,
                                                                         std::bind(&Movement::gui_callback, this, std::placeholders::_1));
 
-    toStage2_sub = this->create_subscription<std_msgs::msg::Bool>("toStage2", 10,
-                                                                  std::bind(&Movement::toStage2_callback, this, std::placeholders::_1));
+    // toStage2_sub = this->create_subscription<std_msgs::msg::Bool>("toStage2", 10,
+    //                                                               std::bind(&Movement::toStage2_callback, this, std::placeholders::_1));
 
     after_climb_sub = this->create_subscription<std_msgs::msg::Bool>("afterClimb", 10,
                                                                      std::bind(&Movement::after_climb_callback, this, std::placeholders::_1));
@@ -99,6 +99,8 @@ public:
 
     allow_lifter_up_pub = this->create_publisher<std_msgs::msg::Bool>("/allow_lifter_up", 10);
 
+    stage2_exit_pub = this->create_publisher<geometry_msgs::msg::Point>("/stage2_exit_pos", 10);
+
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::control_loop, this));
 
     start_received = false;
@@ -153,9 +155,7 @@ private:
     STOP_SENSOR,
     POST_CLIMB_MOVE,
     STAGE2_MOVE_STEPbSTEP,
-    // GOAL_DONE,
     WAIT_LIFTER,
-    // GOAL_ADVANCE
   };
 
   // enum Stage2state
@@ -182,7 +182,8 @@ private:
     ST2_WAIT_LIFTER,
     ST2_WAIT_LIFTER_UP_CONFIRM,
     ST2_REVERSE_AFTER_LIFTER,
-    ST2_DONE
+    ST2_DONE,
+    ST2_EXIT_ROTATE
   };
 
   float desired_linear_vel, max_angular_vel;
@@ -255,6 +256,9 @@ private:
   double odom_offset_x = 0.0;
   double odom_offset_y = 0.0;
 
+  bool stage3_mode = false;
+  bool stage1_climb_done = false;
+
   Stage2SubState st2_state = ST2_IDLE;
 
   // double st2_timer_start = 0.0;
@@ -290,6 +294,7 @@ private:
   std::string pending_dir = "";
   double st2_reverse_start_time = 0.0;
   int pitch_stable_count = 0;
+  bool is_exit_step = false;
 
   double normalize_angle(double angle)
   {
@@ -352,6 +357,13 @@ private:
   {
     // if (current_state != WAITING_FOR_TARGET)
     //   return;
+
+    if (current_state == STRAIGHT_FOR_CLIMB ||
+        current_state == STAGE2_MOVE_STEPbSTEP)
+    {
+      RCLCPP_WARN(this->get_logger(), "pose_callback IGNORED — robot sedang stage2/climb");
+      return;
+    }
 
     targetX = msg->x;
     targetY = msg->y;
@@ -457,15 +469,15 @@ private:
     }
   }
 
-  bool stage2_flag = false;
-  void toStage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
+  // bool stage2_flag = false;
+  // void toStage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  // {
 
-    if (msg->data)
-    {
-      stage2_flag = true;
-    }
-  }
+  //   if (msg->data)
+  //   {
+  //     stage2_flag = true;
+  //   }
+  // }
 
   bool lifter_down2_flag = false;
 
@@ -682,6 +694,11 @@ private:
 
     std::string dir = parse_direction_from_json(msg->data);
 
+    if (dir == "DOWN" && row >= 4)
+      is_exit_step = true;
+    else
+      is_exit_step = false;
+
     if (!dir.empty() && row >= 0 && col >= 0)
     {
 
@@ -890,34 +907,6 @@ private:
     }
   }
 
-  // void update_target_from_step(const std::string &step)
-  // {
-  //   if (step == "RIGHT")
-  //   {
-  //     targetX_world = currentX + 1.2;
-  //     targetY_world = currentY;
-  //   }
-  //   else if (step == "LEFT")
-  //   {
-  //     targetX_world = currentX - 1.2;
-  //     targetY_world = currentY;
-  //   }
-  //   else if (step == "UP")
-  //   {
-  //     targetX_world = currentX;
-  //     targetY_world = currentY + 1.2;
-  //   }
-  //   else if (step == "DOWN")
-  //   {
-  //     targetX_world = currentX;
-  //     targetY_world = currentY - 1.2;
-  //   }
-  //   else
-  //   {
-  //     RCLCPP_WARN(this->get_logger(), "Unknown step received: %s", step.c_str());
-  //   }
-  // }
-
   void control_loop()
   {
     if (!start_received)
@@ -959,6 +948,8 @@ private:
 
     switch (current_state)
     {
+
+    // ================================================STAGE 1==========================================================
     case WAITING_FOR_TARGET:
       cmd.linear.x = 0.0;
       cmd.linear.y = 0.0;
@@ -995,20 +986,8 @@ private:
       if (distance > 0.05)
       {
 
-        // if(stage2_flag)
-        // {
-
-        //   cmd.linear.x = controlled_distance * std::cos(angle);
-        //   cmd.linear.y = controlled_distance * std::sin(angle);
-        // cmd.angular.z = -controlled_angle;
-        //   RCLCPP_INFO(this->get_logger(), "move robot stage2");
-
-        // }
-        // else
-        // {
-
-        cmd.linear.x = 0.2 * std::cos(angle);
-        // cmd.linear.x = controlled_distance * std::cos(angle);
+        // cmd.linear.x = 0.2 * std::cos(angle);
+        cmd.linear.x = controlled_distance * std::cos(angle);
         cmd.linear.y = controlled_distance * std::sin(angle);
         cmd.angular.z = -controlled_angle;
         //  cmd.angular.z = 0.0;
@@ -1034,33 +1013,44 @@ private:
           current_state = TARGET_REACHED;
           stage1_target_count++;
 
-          std_msgs::msg::Bool reached_msg;
-          reached_msg.data = true;
-          reached_pub->publish(reached_msg);
+          // std_msgs::msg::Bool reached_msg;
+          // reached_msg.data = true;
+          // reached_pub->publish(reached_msg);
 
           RCLCPP_INFO(this->get_logger(), "✅ Target %d/%d reached!", stage1_target_count, stage1_targets_total);
 
           if (stage1_target_count >= stage1_targets_total)
           {
-            stage1_completed = true;
-            stage1_complated_for_camera = true;
-            camera_active = true;
-
-            current_state = STRAIGHT_FOR_CLIMB;
-
             stage1_target_count = 0;
             target_received = false;
-            RCLCPP_INFO(this->get_logger(), "target reached");
-            RCLCPP_INFO(this->get_logger(), "STAGE1 COMPLATED - Moving to Stage 2");
+
+            if (!stage1_climb_done)
+            {
+              stage1_completed = true;
+              stage1_climb_done = true;
+              current_state = STRAIGHT_FOR_CLIMB;
+              RCLCPP_INFO(this->get_logger(), "STAGE1 COMPLATED - Moving to Stage 2");
+            }
+            else
+            {
+              current_state = TARGET_REACHED;
+              RCLCPP_INFO(this->get_logger(), "STAGE3 WP reached, waiting next");
+              // RCLCPP_INFO(this->get_logger(), "Stage3 WP reached, tidak trigger climb");
+            }
           }
+            // RCLCPP_INFO(this->get_logger(), "target reached");
           else
           {
 
             RCLCPP_INFO(this->get_logger(), "wait for next target");
           }
+
+          std_msgs::msg::Bool reached_msg;
+          reached_msg.data = true;
+          reached_pub->publish(reached_msg);
+          RCLCPP_INFO(this->get_logger(), "target reached published");
         }
       }
-
       break;
     }
 
@@ -1106,7 +1096,7 @@ private:
 
     case STRAIGHT_FOR_CLIMB:
     {
-      cmd.linear.x = 0.4;
+      cmd.linear.x = 0.5;
       cmd.linear.y = 0.0;
       // cmd.angular.z = 0.0;
       cmd.angular.z = -controlled_angle;
@@ -1175,7 +1165,7 @@ private:
       double dy = currentY - start_y_after_climb;
       double dist = sqrt(dx * dx + dy * dy);
 
-      if (dist < 0.3)
+      if (dist < 0.2)
       {
         cmd.linear.x = 0.3;
         cmd.linear.y = 0.0;
@@ -1228,7 +1218,7 @@ private:
 
     case STAGE2_MOVE_STEPbSTEP:
     {
-      if (!goal_active)
+      if (!goal_active && st2_state != ST2_EXIT_ROTATE)
       {
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
@@ -1405,8 +1395,8 @@ private:
         else
         {
           // === MOTION CONTROL (FIX UTAMA) ===
-          cmd.linear.x = 0.4 * dx_r;
-          cmd.linear.y = 0.4 * dy_r;
+          cmd.linear.x = 0.5 * dx_r;
+          cmd.linear.y = 0.5 * dy_r;
         }
         // IMPORTANT: jangan pakai angular PID di translasi
         cmd.angular.z = 0.0;
@@ -1416,7 +1406,7 @@ private:
 
       case ST2_REVERSE_AFTER_LIFTER:
       {
-        cmd.linear.x = -0.2;
+        cmd.linear.x = -0.3;
         cmd.angular.z = 0.0;
         // cmd.angular.z = -controlled_angle;
 
@@ -1517,16 +1507,27 @@ private:
           }
           else
           {
-            std_msgs::msg::Bool wp_msg;
-            wp_msg.data = true;
-            wp_reached2_pub->publish(wp_msg);
-            RCLCPP_INFO(this->get_logger(), "WP REACHED → minta next_step");
+            if (is_exit_step)
+            {
+              rotate_target_yaw = 0.0;
+              st2_state = ST2_EXIT_ROTATE;
+              is_exit_step = false;
+              RCLCPP_INFO(this->get_logger(), "EXIT STEP → mutar hadap depan");
+            }
+            else
+            {
+              std_msgs::msg::Bool wp_msg;
+              wp_msg.data = true;
+              wp_reached2_pub->publish(wp_msg);
+              RCLCPP_INFO(this->get_logger(), "WP REACHED → minta next_step");
+
+              st2_state = ST2_IDLE;
+            }
           }
 
           // targetX_world = currentX;
           // targetY_world = currentY;
 
-          st2_state = ST2_IDLE;
           // st2_state = ST2_STRAIGHT_CLIMB;
           RCLCPP_INFO(this->get_logger(), "LIFTER KONFIRMASI NAIK -> LANJUT");
         }
@@ -1544,8 +1545,8 @@ private:
           descend_lifter_up_received = false;
           proxy_stop_triggered = false;
           proxy_was_seen = false;
-          st2_reverse_start_time = 0.0;  
-          pitch_stable_count = 0;         
+          st2_reverse_start_time = 0.0;
+          pitch_stable_count = 0;
 
           targetX_world = currentX;
           targetY_world = currentY;
@@ -1557,6 +1558,50 @@ private:
 
         RCLCPP_INFO(this->get_logger(), "WAITING LIFTER IN STAGE 2");
 
+        break;
+      }
+
+      case ST2_EXIT_ROTATE:
+      {
+
+        RCLCPP_INFO(this->get_logger(), "EXIT ROTATE | heading=%.2f target=%.2f yaw_error=%.2f",
+                    heading, rotate_target_yaw, rotate_target_yaw - heading);
+
+        double yaw_error = normalize_angle(rotate_target_yaw - heading);
+
+        // while (yaw_error > M_PI)
+        //   yaw_error -= 2 * M_PI;
+        // while (yaw_error < -M_PI)
+        //   yaw_error += 2 * M_PI;
+
+        if (fabs(yaw_error) > 0.03)
+        {
+          cmd.angular.z = (yaw_error > 0) ? 0.3 : -0.3;
+        }
+        else
+        {
+          cmd.angular.z = 0.0;
+          cmd.linear.z = 0.0;
+
+          // std_msgs::msg::Bool wp_msg;
+          // wp_msg.data = true;
+          // wp_reached2_pub->publish(wp_msg);
+          // RCLCPP_INFO(this->get_logger(), "EXIT ROTATE DONE → WP REACHED");
+
+          geometry_msgs::msg::Point exit_msg;
+          exit_msg.x = currentX;
+          exit_msg.y = currentY;
+          stage2_exit_pub->publish(exit_msg);
+
+          std_msgs::msg::Bool reached_msg;
+          reached_msg.data = true;
+          reached_pub->publish(reached_msg);
+          RCLCPP_INFO(this->get_logger(), "EXIT ROTATE DONE → STAGE 3 pos=(%.2f, %.2f)", currentX, currentY);
+
+          current_state = MOVING_TO_TARGET;
+          st2_state = ST2_IDLE;
+          is_stage2 = false;
+        }
         break;
       }
 
@@ -1788,6 +1833,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr checking_input_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_list_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr next_step_sub;
+  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr stage2_exit_pub;
   nav_msgs::msg::Odometry odom_robot_msg;
 
   rclcpp::TimerBase::SharedPtr timer_;

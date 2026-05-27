@@ -20,7 +20,12 @@ public:
 
     lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
 
-    toStage2_pub = this->create_publisher<std_msgs::msg::Bool>("toStage2", 10);
+    exit_pos_sub = this->create_subscription<geometry_msgs::msg::Point>("/stage2_exit_pos", 10,
+      std::bind(&waypointPublish::exit_pos_callback, this, std::placeholders::_1));
+
+    // toStage2_pub = this->create_publisher<std_msgs::msg::Bool>("toStage2", 10);
+
+
 
     waypoint = {
 
@@ -56,7 +61,11 @@ private:
   bool waiting_ir = false;
   bool reached_latched = false;
   bool all_completed = false;
-  bool stage2_sent = false;
+  double exit_x = 0.0,exit_y = 0.0;
+  bool exit_pos_received = false;
+  bool stage2_done = false;
+  bool exit_pos_pushed = false;
+  bool stage1_done = false;
 
   size_t current_waypoint_index;
 
@@ -115,7 +124,7 @@ private:
     }
 
     // WP1 → WAIT IR
-    if (current_waypoint_index == 1)
+    if (current_waypoint_index == 1 && !stage1_done)
     {
       state = WP_STATE::WAIT_IR;
       waiting_ir = true;
@@ -124,21 +133,51 @@ private:
       return; 
     }
 
-    // if(current_waypoint_index == 2 && !stage2_sent)
+    // if(stage2_done && exit_pos_received && !exit_pos_pushed)
     // {
-
-    //   stage2_sent = true;
-
-    //   std_msgs::msg::Bool stage2_msg;
-    //   stage2_msg.data = true;
-    //   toStage2_pub->publish(stage2_msg);
-
-    //   RCLCPP_INFO(this->get_logger(), "ENTRY STAGE2 - CHANGE SPEED");
-
+    //   exit_pos_pushed = true;
+    //   send_waypoint();
+    //   return;
     // }
 
     // WP lainnya langsung lanjut
     advance_waypoint();
+  }
+  
+  void exit_pos_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  {
+    exit_x = msg->x;
+    exit_y = msg->y;
+
+    exit_pos_received = true;
+    stage2_done = true;
+    all_completed = false;
+    stage1_done = true;
+
+    reached_latched = false;
+    waiting_ir = false;
+
+    state = WP_STATE::MOVING;
+
+    waypoint.push_back({exit_x, exit_y + -1.1});
+    waypoint.push_back({exit_x + 2.0 , exit_y + -1.0});
+
+    current_waypoint_index = waypoint.size() - 2;
+    
+    // RCLCPP_INFO(this->get_logger(), "STAGE 3 WAYPOINTS: geser=(%.2f,%.2f) maju=(%.2f,%.2f)",
+    // exit_x, exit_y - 1.0, exit_x + 1.0, exit_y - 1.0);
+
+    RCLCPP_INFO(this->get_logger(),
+    "STAGE 3 WAYPOINTS: geser=(%.2f,%.2f) maju=(%.2f,%.2f)",
+    waypoint[waypoint.size()-2].first,
+    waypoint[waypoint.size()-2].second,
+    waypoint[waypoint.size()-1].first,
+    waypoint[waypoint.size()-1].second);
+
+
+    send_waypoint();
+    // RCLCPP_INFO(this->get_logger(), "EXIT POS RECEIVED: (%.2f, %.2f)", exit_x, exit_y);
+
   }
 
   void ir_callback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -157,8 +196,9 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pose_pub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ir_sub;
+  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr exit_pos_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_pub;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr toStage2_pub;
+  // rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr toStage2_pub;
 
   std::vector<std::pair<double, double>> waypoint;
 };
@@ -170,302 +210,3 @@ int main(int argc, char **argv)
   rclcpp::shutdown();
   return 0;
 }
-
-
-// class waypointPublish : public rclcpp::Node
-// {
-// public:
-//   waypointPublish() : Node("send_pose")
-//   {
-
-//     pose_pub = this->create_publisher<geometry_msgs::msg::Point>("/pose", 10);
-
-//     reached_sub = this->create_subscription<std_msgs::msg::Bool>("/target_reached", 10,
-//       std::bind(&waypointPublish::reached_callback, this, std::placeholders::_1));
-
-//     lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
-
-//     ir_sub = this->create_subscription<std_msgs::msg::Bool>("/infraReceive", 10,
-//     std::bind(&waypointPublish::ir_callback, this,std::placeholders::_1));
-
-//     toStage2_pub = this->create_publisher<std_msgs::msg::Bool>("/toStage2", 10);
-
-//     // timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&waypointPublish::control, this));
-
-//     waypoint= {
-
-//       {0.2 , 1.0},
-//       {1.1 , 1.0},
-//       {2.0 , -0.4}
-//     };
-
-//     current_waypoint_index = 0;
-//     waypoint_sent = false;
-//     all_complated = false;
-
-//     RCLCPP_INFO(this->get_logger(), "waypoint publisher start");
-//     send_waypoint();
-
-//   }
-
-//   private:
-
-//   bool ir_received = false;
-//   bool last_reached = false;
-//   bool prev_reaached = false;
-//   // bool waiting_ack = false;
-//   bool waypoint_sent;
-//   bool all_complated;
-
-
-
-//   void reached_callback(const std_msgs::msg::Bool::SharedPtr msg)
-//   {
-//     if(msg->data && !prev_reaached && !all_complated)
-//     // if(msg->data && !all_complated && !last_reached)
-//     {
-//       RCLCPP_INFO(this->get_logger(),"waypoint reached");
-
-//       if(current_waypoint_index == 0)
-//       {
-//         std_msgs::msg::Bool lifter_msg;
-//         lifter_msg.data = true;
-//         lifter_pub->publish(lifter_msg);
-
-//         RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
-//       }
-
-//       if(current_waypoint_index == 1)
-//       {
-//         // ir_received = false;
-//         RCLCPP_INFO(this->get_logger(), "Waiting IR before continue...");
-//         return;
-//       }
-
-//       // if(current_waypoint_index == 2)
-//       // {
-//       //   std_msgs::msg::Bool toStage2_msg;
-//       //   toStage2_msg.data = true;
-//       //   toStage2_pub->publish(toStage2_msg);
-
-//       //   RCLCPP_INFO(this->get_logger(), "To stage 2 change speed");
-
-//       // }
-
-//       current_waypoint_index++;
-//       // ir_received = false;
-
-//       if(current_waypoint_index < waypoint.size()){
-//         send_waypoint();
-//       }else{
-//         all_complated = true;
-//         RCLCPP_INFO(this->get_logger(), "ALL WAYPOINTS COMPLETE");
-//       }
-
-//     }
-
-//     prev_reaached = msg->data;
-//   }
-
-
-//   void ir_callback(const std_msgs::msg::Bool::SharedPtr msg)
-//   {
-//     if(msg->data && current_waypoint_index == 1 && !ir_received)
-//     {
-//       ir_received = true;
-//       // last_reached = false;
-//       RCLCPP_INFO(this->get_logger(), "IR received");
-
-//       // current_waypoint_index++;
-
-//       // if(current_waypoint_index < waypoint.size())
-//       // {
-//       //   send_waypoint();
-//       // }else{
-//       //   all_complated = true;
-//       //   RCLCPP_INFO(this->get_logger(), "ALL_COMPLATED");
-//       // }
-
-//     }
-//   }
-
-
-//   void send_waypoint(){
-//     if(current_waypoint_index < waypoint.size()){
-
-//       geometry_msgs::msg::Point point;
-//       point.x = waypoint[current_waypoint_index].first;
-//       point.y = waypoint[current_waypoint_index].second;
-//       point.z = 0.0;
-
-//       pose_pub->publish(point);
-//       waypoint_sent = true;
-//     }
-//   }
-
-//   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pose_pub;
-//   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_sub;
-//   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_pub;
-//   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr toStage2_pub;
-//   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ir_sub;
-//   rclcpp::TimerBase::SharedPtr timer_;
-//   std::vector<std::pair<double, double>>waypoint;
-//   size_t current_waypoint_index;
-// };
-
-// int main(int argc, char **argv)
-// {
-//   rclcpp::init(argc, argv);
-//   rclcpp::spin(std::make_shared<waypointPublish>());
-//   rclcpp::shutdown();
-//   return 0;
-// }
-
-
-
-// #include <rclcpp/rclcpp.hpp>
-// #include <std_msgs/msg/bool.hpp>
-// #include <geometry_msgs/msg/point.hpp>
-// #include <cmath>
-
-// class waypointPublish : public rclcpp::Node
-// {
-// public:
-//   waypointPublish() : Node("send_pose")
-//   {
-
-//     pose_pub = this->create_publisher<geometry_msgs::msg::Point>("/pose", 10);
-
-//     reached_sub = this->create_subscription<std_msgs::msg::Bool>("/target_reached", 10,
-//     std::bind(&waypointPublish::reached_callback, this, std::placeholders::_1));
-
-//     limit_sub = this->create_subscription<std_msgs::msg::Bool>("/limitdata", 10,
-//     std::bind(&waypointPublish::limit_callback, this, std::placeholders::_1));
-
-//     timer_ = this->create_wall_timer(std::chrono::milliseconds(100),std::bind(&waypointPublish::check_progress, this));
-
-//     waypoint = {
-  
-//         // {0.2, 0.9},
-//         // {1.0, 0.9}
-
-//         // {0.0 , 1.0}
-//         {0.5, 0.9},
-//         {0.9, 0.9}
-
-//     };
-
-//     current_waypoint_index = 0;
-//     waypoint_sent = false;
-//     all_complated = false;
-    
-//     RCLCPP_INFO(this->get_logger(), "waypoint publisher start");
-//     send_waypoint();
-//   }
-  
-//   private:
-  
-//   bool last_limit = false;
-//   bool target_reached_flag = false;
-//   bool limit_triggered = false;
-
-//   void reached_callback(const std_msgs::msg::Bool::SharedPtr msg)
-//   {
-
-//     if(msg->data)
-//     {
-//       target_reached_flag = true;
-//     }
-//     // if ((msg->data  || limit_triggered )&& !all_complated)
-//     // {
-//     //   RCLCPP_INFO(this->get_logger(), "waypoint reached(odom / limit)");
-
-//     //   current_waypoint_index++;
-
-//     //   limit_triggered = true;
-
-//     //   if (current_waypoint_index < waypoint.size())
-//     //   {
-//     //     send_waypoint();
-//     //   }
-//     //   else
-//     //   {
-//     //     all_complated = true;
-//     //     RCLCPP_INFO(this->get_logger(), "ALL WAYPOINTS COMPLETE");
-//     //   }
-//     // }
-//   }
-
-  
-//   void limit_callback(const std_msgs::msg::Bool::SharedPtr msg)
-//   {
-//     if(msg->data != last_limit)
-//     {
-//       RCLCPP_INFO(this->get_logger(),msg->data ? "LIMIT TOUCHED" : "LIMIT CLEARED");
-      
-//       if(msg->data)
-//       {
-//         limit_triggered = true;
-//       }
-//     }
-//     last_limit = msg->data;
-//   }
-
-//   void check_progress()
-//   {
-//     if(all_complated)
-//       return;
-
-//     if(target_reached_flag || limit_triggered)
-//     {
-
-//       RCLCPP_INFO(this->get_logger(), "waypoint reached(odom / limit)");
-
-//       current_waypoint_index++;
-      
-//       limit_triggered = true;
-//       target_reached_flag = false;
-      
-//       if (current_waypoint_index < waypoint.size())
-//       {
-//         send_waypoint();
-//       }
-//       else
-//       {
-//         all_complated = true;
-//         RCLCPP_INFO(this->get_logger(), "ALL WAYPOINTS COMPLETE");
-//       }
-//     }
-//   }
-
-//   void send_waypoint()
-//   {
-//     if (current_waypoint_index < waypoint.size())
-//     {
-//       geometry_msgs::msg::Point point;
-//       point.x = waypoint[current_waypoint_index].first;
-//       point.y = waypoint[current_waypoint_index].second;
-//       point.z = 0.0;
-
-//       pose_pub->publish(point);
-//       waypoint_sent = true;
-//     }
-//   }
-  
-//   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pose_pub;
-//   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_sub;
-//   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_sub;
-//   rclcpp::TimerBase::SharedPtr timer_;
-//   std::vector<std::pair<double, double>> waypoint;
-//   size_t current_waypoint_index;
-//   bool waypoint_sent;
-//   bool all_complated;
-// };
-
-// int main(int argc, char **argv)
-// {
-//   rclcpp::init(argc, argv);
-//   rclcpp::spin(std::make_shared<waypointPublish>());
-//   rclcpp::shutdown();
-//   return 0;
-// }

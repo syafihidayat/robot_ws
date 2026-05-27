@@ -459,7 +459,7 @@ class MeihuaApp:
 
     def _build_right(self, parent):
         # ROS2 Config
-        sec_ros = self._sec(parent, "📡  ROS2 CONFIG", fg="#3b82f6")
+        sec_ros = self._sec(parent, "📡  ROS2 CONFIG", fg="#36393f")
 
         r1 = tk.Frame(sec_ros, bg=PANEL_BG)
         r1.pack(fill="x", padx=8, pady=2)
@@ -764,7 +764,6 @@ class MeihuaApp:
     #         self._update_path_info()
     #         self._draw_grid()
 
-
     def _send_next_step(self):
             
         if not self.path:
@@ -785,6 +784,25 @@ class MeihuaApp:
             self.path_step += 1
  
         if self.path_step >= len(self.path):
+            self._log("✅ Semua step sudah dikirim! Kirim mundur exit stage2...")
+
+            last_r, last_c = self.path[-1]
+            last_h = GRID_HEIGHTS[last_r][last_c]
+
+            import json
+            from std_msgs.msg import String
+            exit_payload = json.dumps({
+                "step" : len(self.path),
+                "row" : last_r + 1,
+                "col" : last_c,
+                "height" : last_h - 200,
+                "direction" : "DOWN"
+            })
+
+            msg = String()
+            msg.data = exit_payload
+            self.ros.pub_next.publish(msg)
+            self._log("📡 EXIT mundur dikirim → keluar stage2")
             self._log("✅ Semua step sudah dikirim!")
             self._set_status(STATUS_DONE)
             return
