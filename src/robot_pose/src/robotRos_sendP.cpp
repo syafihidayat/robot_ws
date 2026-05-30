@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <geometry_msgs/msg/point.hpp>
+#include <nav_msgs/msg/odometry.hpp>
 #include <cmath>
 
 class waypointPublish : public rclcpp::Node
@@ -20,8 +21,17 @@ public:
 
     lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
 
+    limit_sub = this->create_subscription<std_msgs::msg::Bool>("limitSlideData", 10,
+      std::bind(&waypointPublish::limit_callback, this, std::placeholders::_1));
+
     exit_pos_sub = this->create_subscription<geometry_msgs::msg::Point>("/stage2_exit_pos", 10,
       std::bind(&waypointPublish::exit_pos_callback, this, std::placeholders::_1));
+
+    odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
+      [this](const nav_msgs::msg::Odometry::SharedPtr msg){
+        current_robot_x = msg->pose.pose.position.x;
+        current_robot_y = msg->pose.pose.position.y;
+      });
 
     // toStage2_pub = this->create_publisher<std_msgs::msg::Bool>("toStage2", 10);
 
@@ -33,7 +43,7 @@ public:
       // {0.0, 1.0}
 
       // {0.0, 1.0},
-      // {1.0, 1.0}
+      // {1.0, 1.0},
       // {1.0, -1.5},
       // {1.5, -1.5}
     };
@@ -62,6 +72,8 @@ private:
   bool reached_latched = false;
   bool all_completed = false;
   double exit_x = 0.0,exit_y = 0.0;
+  double current_robot_x = 0.0 , current_robot_y = 0.0;
+  bool limit_triggered = false;
   bool exit_pos_received = false;
   bool stage2_done = false;
   bool exit_pos_pushed = false;
@@ -133,15 +145,34 @@ private:
       return; 
     }
 
-    // if(stage2_done && exit_pos_received && !exit_pos_pushed)
-    // {
-    //   exit_pos_pushed = true;
-    //   send_waypoint();
-    //   return;
-    // }
-
     // WP lainnya langsung lanjut
     advance_waypoint();
+  }
+
+  void limit_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if(all_completed) return;
+    if(!msg->data) return;
+    if(limit_triggered) return;
+    if(reached_latched) return;
+    if(state != WP_STATE::MOVING) return;
+
+    if(current_waypoint_index != 0) return;
+
+    limit_triggered = true;
+    reached_latched = true;
+
+    RCLCPP_INFO(this->get_logger(), "LIMIT HIT WP0 → Anggap Reached + Lifter turun");
+
+    std_msgs::msg::Bool lifter_msg;
+    lifter_msg.data = true;
+    lifter_pub->publish(lifter_msg);
+
+    waypoint[1].second = current_robot_y;
+    RCLCPP_INFO(this->get_logger(),"WP1 di-snap ke Y robot: %.3f", current_robot_y);
+
+    advance_waypoint();
+
   }
   
   void exit_pos_callback(const geometry_msgs::msg::Point::SharedPtr msg)
@@ -156,6 +187,7 @@ private:
 
     reached_latched = false;
     waiting_ir = false;
+    limit_triggered = false;
 
     state = WP_STATE::MOVING;
 
@@ -198,6 +230,8 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ir_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr exit_pos_sub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_pub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_sub;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   // rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr toStage2_pub;
 
   std::vector<std::pair<double, double>> waypoint;
