@@ -60,9 +60,9 @@ COLS = 3
 # R2 selalu masuk Meihua Forest dari titik ini (row=0, col=1, height=200mm)
 R2_ENTRY = (0, 1)
 
-CELL_W = 130
-CELL_H = 105
-PAD    = 12
+CELL_W = 100
+CELL_H = 82
+PAD    = 9
 
 # ─── Warna ───────────────────────────────────────────────────────────────────
 BG       = "#0d1117"
@@ -311,45 +311,45 @@ class MeihuaApp:
     def _build_ui(self):
         # Header
         hdr = tk.Frame(self.root, bg=BG)
-        hdr.pack(fill="x", pady=(12,4))
+        hdr.pack(fill="x", pady=(8,3))
         tk.Label(hdr, text="ABU ROBOCON 2026  ·  HONG KONG",
-                 bg=BG, fg=ACCENT, font=("Courier",9,"bold")).pack()
+                 bg=BG, fg=ACCENT, font=("Courier",8,"bold")).pack()
         tk.Label(hdr, text="🌸  MEIHUA FOREST PLANNER  +  ROS2",
-                 bg=BG, fg="#60a5fa", font=("Courier",17,"bold")).pack()
+                 bg=BG, fg="#60a5fa", font=("Courier",13,"bold")).pack()
         tk.Label(hdr, text="A* Pathfinding  ·  R2 Autonomous Navigation  ·  ROS2 Path Publisher",
                  bg=BG, fg="#64748b", font=("Courier",9)).pack()
 
         # ── Status Bar ───────────────────────────────────────────────────
         sb = tk.Frame(self.root, bg=PANEL_BG,
                       highlightbackground=BORDER, highlightthickness=1)
-        sb.pack(fill="x", padx=16, pady=(4,0))
+        sb.pack(fill="x", padx=10, pady=(3,0))
 
         self.lbl_robot_status = tk.Label(sb, text=f"● {STATUS_WAITING}",
             bg=PANEL_BG, fg=STATUS_COLOR[STATUS_WAITING],
-            font=("Courier",11,"bold"))
-        self.lbl_robot_status.pack(side="left", padx=12, pady=6)
+            font=("Courier",9,"bold"))
+        self.lbl_robot_status.pack(side="left", padx=12, pady=4)
 
         self.lbl_robot_pos = tk.Label(sb, text="R2 Pos: —",
-            bg=PANEL_BG, fg="#94a3b8", font=("Courier",10))
-        self.lbl_robot_pos.pack(side="left", padx=10)
+            bg=PANEL_BG, fg="#94a3b8", font=("Courier",8))
+        self.lbl_robot_pos.pack(side="left", padx=8)
 
         self.lbl_entry_status = tk.Label(sb,
             text=f"Entry {R2_ENTRY}: ✗ Belum",
-            bg=PANEL_BG, fg="#f59e0b", font=("Courier",10))
-        self.lbl_entry_status.pack(side="left", padx=10)
+            bg=PANEL_BG, fg="#f59e0b", font=("Courier",8))
+        self.lbl_entry_status.pack(side="left", padx=8)
 
         self.lbl_ros = tk.Label(sb,
             text="ROS2: " + ("🟢 ON" if self.ros_connected else "⚫ OFF"),
             bg=PANEL_BG, fg="#4ade80" if self.ros_connected else "#64748b",
-            font=("Courier",10))
-        self.lbl_ros.pack(side="right", padx=12)
+            font=("Courier",8))
+        self.lbl_ros.pack(side="right", padx=10)
 
         # ── Main 3-column layout ─────────────────────────────────────────
         main = tk.Frame(self.root, bg=BG)
-        main.pack(fill="both", expand=True, padx=16, pady=8)
+        main.pack(fill="both", expand=True, padx=10, pady=6)
 
-        left = tk.Frame(main, bg=BG, width=215)
-        left.pack(side="left", fill="y", padx=(0,10))
+        left = tk.Frame(main, bg=BG, width=190)
+        left.pack(side="left", fill="y", padx=(0,8))
         left.pack_propagate(False)
         self._build_left(left)
 
@@ -357,8 +357,8 @@ class MeihuaApp:
         center.pack(side="left", fill="both", expand=True)
         self._build_canvas(center)
 
-        right = tk.Frame(main, bg=BG, width=310)
-        right.pack(side="left", fill="y", padx=(10,0))
+        right = tk.Frame(main, bg=BG, width=270)
+        right.pack(side="left", fill="y", padx=(8,0))
         right.pack_propagate(False)
         self._build_right(right)
 
@@ -496,7 +496,7 @@ class MeihuaApp:
         sec_json = self._sec(parent, "📋  PATH JSON → ROS2", fg="#3b82f6")
         self.json_box = scrolledtext.ScrolledText(
             sec_json, bg="#060d14", fg="#60a5fa",
-            font=("Courier",8), height=9, bd=0,
+            font=("Courier",8), height=7, bd=0,
             state="disabled", wrap="none")
         self.json_box.pack(fill="x", padx=8, pady=(0,8))
 
@@ -504,7 +504,7 @@ class MeihuaApp:
         sec_log = self._sec(parent, "📋  EVENT LOG")
         self.log_box = scrolledtext.ScrolledText(
             sec_log, bg="#060d14", fg="#e2e8f0",
-            font=("Courier",8), height=7, bd=0,
+            font=("Courier",8), height=5, bd=0,
             state="disabled", wrap="word")
         self.log_box.pack(fill="x", padx=8, pady=(0,4))
 
@@ -512,7 +512,7 @@ class MeihuaApp:
         sec_path = self._sec(parent, "🗺  PATH STEPS")
         self.path_box = scrolledtext.ScrolledText(
             sec_path, bg="#060d14", fg="#e2e8f0",
-            font=("Courier",8), height=8, bd=0,
+            font=("Courier",8), height=6, bd=0,
             state="disabled", wrap="none")
         self.path_box.pack(fill="x", padx=8, pady=(0,8))
 

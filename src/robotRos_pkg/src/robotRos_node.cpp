@@ -5,6 +5,7 @@
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/u_int16.hpp>
+#include <std_msgs/msg/u_int32.hpp>
 #include "gui_kfs_msgs/msg/kfs_decision.hpp"
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <pid.hpp>
@@ -20,10 +21,11 @@ PID omni_angular;
 
 class Movement : public rclcpp::Node
 {
-
-public:
+  
+  public:
   Movement() : Node("Movement_Point")
   {
+    auto qos = rclcpp::QoS(10).transient_local();
 
     cmd_pub = this->create_publisher<geometry_msgs::msg::Twist>("/omni_cont/cmd_vel", 10);
 
@@ -39,11 +41,11 @@ public:
     waypoint_backend_sub = this->create_subscription<geometry_msgs::msg::Point>("/planner/waypoint", 10,
                                                                                 std::bind(&Movement::waypoint_backend_callback, this, std::placeholders::_1));
 
-    gui_sub = this->create_subscription<gui_kfs_msgs::msg::KFSDecision>("kfs_decision", 10,
+    gui_sub = this->create_subscription<std_msgs::msg::Bool>("/kfs_decision", qos,
                                                                         std::bind(&Movement::gui_callback, this, std::placeholders::_1));
 
-    // toStage2_sub = this->create_subscription<std_msgs::msg::Bool>("toStage2", 10,
-    //                                                               std::bind(&Movement::toStage2_callback, this, std::placeholders::_1));
+    buttonStage3_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage3", 10,
+                                    std::bind(&Movement::toStage3_callback, this, std::placeholders::_1));
 
     after_climb_sub = this->create_subscription<std_msgs::msg::Bool>("afterClimb", 10,
                                                                      std::bind(&Movement::after_climb_callback, this, std::placeholders::_1));
@@ -52,23 +54,23 @@ public:
     //                                                                        std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
 
     limit_stage2_sub = this->create_subscription<std_msgs::msg::Bool>("limitdata", 10,
-                                                                      std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
+                                  std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
 
     tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
-                                                               std::bind(&Movement::tof_callback, this, std::placeholders::_1));
+                                std::bind(&Movement::tof_callback, this, std::placeholders::_1));
 
     tof_send_pub = this->create_publisher<std_msgs::msg::UInt16>("tof_send_back", 10);
 
     lifter2_sub = this->create_subscription<std_msgs::msg::Bool>("/lifter_down2", 10,
-                                                                 std::bind(&Movement::lifter2_callback, this, std::placeholders::_1));
+                                std::bind(&Movement::lifter2_callback, this, std::placeholders::_1));
 
     reached_pub = this->create_publisher<std_msgs::msg::Bool>("/target_reached", 10);
 
     infraReceive_sub = this->create_subscription<std_msgs::msg::Bool>("infraReceive", 10,
-                                                                      std::bind(&Movement::infra_callback, this, std::placeholders::_1));
+                                std::bind(&Movement::infra_callback, this, std::placeholders::_1));
 
     reached_Astar_sub = this->create_subscription<std_msgs::msg::Bool>("/target_Astar_Done", 10,
-                                                                       std::bind(&Movement::reached_Astar_callback, this, std::placeholders::_1));
+                                std::bind(&Movement::reached_Astar_callback, this, std::placeholders::_1));
 
     proxy_true_pub = this->create_publisher<std_msgs::msg::Bool>("/true_sensor_proxy", 10);
 
@@ -77,35 +79,39 @@ public:
     climb_done_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/r2_arrived", 10);
 
     wait_lifter_sub = this->create_subscription<std_msgs::msg::Bool>("/wait_lifter", 10,
-                                                                     std::bind(&Movement::wait_lifter_callback, this, std::placeholders::_1));
+                              std::bind(&Movement::wait_lifter_callback, this, std::placeholders::_1));
 
     wp_done_pub = this->create_publisher<std_msgs::msg::Bool>("/wp_done", 10);
 
     path_list_sub = this->create_subscription<std_msgs::msg::String>("/meihua/path_steps", 10,
-                                                                     std::bind(&Movement::path_list_callback, this, std::placeholders::_1));
+                              std::bind(&Movement::path_list_callback, this, std::placeholders::_1));
 
     next_step_sub = this->create_subscription<std_msgs::msg::String>("/meihua/next_step", 10,
-                                                                     std::bind(&Movement::next_step_callback, this, std::placeholders::_1));
+                              std::bind(&Movement::next_step_callback, this, std::placeholders::_1));
 
     descend_pub = this->create_publisher<std_msgs::msg::Bool>("/start_descend", 10);
 
 
     descend_lifter_up_sub = this->create_subscription<std_msgs::msg::Bool>("/descend_lifter_up_after_down", 10,
-                                                                           std::bind(&Movement::descend_lifter_up_callback, this, std::placeholders::_1));
+                              std::bind(&Movement::descend_lifter_up_callback, this, std::placeholders::_1));
 
     checking_input_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>("/checking_input", 10,
                               std::bind(&Movement::checking_input_callback, this, std::placeholders::_1));
-
-    // limit_slide_sub = this->create_subscription<std_msgs::msg::Bool>("limitSlideData", 10,
-    //   std::bind(&Movement::limit_slide_callback, this,std::placeholders::_1));
 
     allow_lifter_up_pub = this->create_publisher<std_msgs::msg::Bool>("/allow_lifter_up", 10);
 
     stage2_exit_pub = this->create_publisher<geometry_msgs::msg::Point>("/stage2_exit_pos", 10);
 
+    // tambah subscriber
+    // ir_code_sub = this->create_subscription<std_msgs::msg::UInt32>("ir_raw_code", 10,
+    // [this](const std_msgs::msg::UInt32::SharedPtr msg) {
+    //     RCLCPP_INFO(this->get_logger(), "IR RAW CODE: 0x%08X", msg->data);
+    // });
+
 
 
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::control_loop, this));
+
 
     start_received = false;
     target_received = false;
@@ -194,7 +200,7 @@ private:
   float desired_linear_vel, max_angular_vel;
 
   int stage1_target_count = 0;
-  int stage1_targets_total = 1;
+  int stage1_targets_total = 4;
   bool stage1_completed = false;
 
   bool camera_active = false;
@@ -466,14 +472,16 @@ private:
       hardware_pitch = msg->data[5];
       hardware_lifter_pos = msg->data[6];
 
-      // RCLCPP_INFO(this->get_logger(),
-      //       "HW | rps1=%.2f rps2=%.2f rps3=%.2f rps4=%.2f",
-      //       msg->data[0],  // rps1
-      //       msg->data[1],  // rps2
-      //       msg->data[2],  // rps3
-      //       msg->data[3]); // rps4
-      // msg->data[5],  // pitch
-      // msg->data[6]); // pos lifter
+      // RCLCPP_INFO(this->get_logger()," pos lifter", msg->data[6]);
+
+      RCLCPP_INFO(this->get_logger(),
+            "Pos Lifter: %.2f",
+            // msg->data[0],  // rps1
+            // msg->data[1],  // rps2
+            // msg->data[2],  // rps3
+            // msg->data[3], // rps4
+            // msg->data[5],  // pitch
+            msg->data[6]); // pos lifter
     }
   }
 
@@ -491,10 +499,21 @@ private:
 
   bool decision_receive = false;
 
-  void gui_callback(const gui_kfs_msgs::msg::KFSDecision::SharedPtr msg)
+  void gui_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     decision_receive = true;
     RCLCPP_INFO(this->get_logger(), "Decision received -> robot boleh jalan");
+  }
+
+
+  bool button3 = false; 
+  
+  void toStage3_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+
+    bool button3 = true;
+    
+    RCLCPP_INFO(this->get_logger(), "button stage 3 received -> robot lanjut jalan di stage3");
   }
 
   void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
@@ -556,20 +575,6 @@ private:
       }
     }
   }
-
-  // void limit_slide_callback(const std_msgs::msg::Bool::SharedPtr msg)
-  // {
-  //   bool limit_pressed = msg->data;
-
-  //   if(limit_pressed)
-  //   {
-  //       RCLCPP_INFO(this->get_logger(), "Limit switch ditekan");
-  //   }
-  //   else
-  //   {
-  //       RCLCPP_INFO(this->get_logger(), "Limit switch dilepas");
-  //   }
-  // }
 
   void after_climb_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
@@ -928,6 +933,8 @@ private:
       RCLCPP_INFO(this->get_logger(), " Waiting target receive from gui......");
       RCLCPP_INFO(this->get_logger(), "posisi x %f", currentX);
       RCLCPP_INFO(this->get_logger(), "posisi y %f\n", currentY);
+      // RCLCPP_INFO(this->get_logger(), "posisi y %f\n", msg->data[6]);
+      
       return;
     }
 
@@ -1889,7 +1896,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr lifter2_sub;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr waypoint_backend_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr infraReceive_sub;
-  rclcpp::Subscription<gui_kfs_msgs::msg::KFSDecision>::SharedPtr gui_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr gui_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_stage2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr after_climb_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_Astar_sub;
@@ -1903,13 +1910,14 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wp_done_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr allow_lifter_up_pub;
-  // rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_pub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage3_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_sub;
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr checking_input_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_list_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr next_step_sub;
-  // rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_slide_sub;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr stage2_exit_pub;
+  rclcpp::Subscription<std_msgs::msg::UInt32>::SharedPtr ir_code_sub;
+  // di bagian private class Movement
   nav_msgs::msg::Odometry odom_robot_msg;
 
   rclcpp::TimerBase::SharedPtr timer_;
