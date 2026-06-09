@@ -39,9 +39,17 @@ ros_ok  = False
 if USE_ROS:
     try:
         import rclpy
+        import rclpy.signals
         from rclpy.node import Node
         from std_msgs.msg import String
         from std_msgs.msg import Bool
+        from rclpy.qos import QoSProfile, DurabilityPolicy
+        try:
+            from mehua_pkg_msgs.msg import KFSDetectionArray
+            kfs_msg_ok = True
+        except ImportError:
+            kfs_msg_ok = False
+            print("[WARN] mehua_pkg_msgs tidak ditemukan, KFS detection dinonaktifkan")
         ros_ok = True
     except ImportError:
         print("[WARN] rclpy tidak ditemukan. Jalankan: pip install rclpy")
@@ -141,14 +149,21 @@ def direction(a, b):
 class MeihuaRosNode:
     def __init__(self, on_position_cb, on_wp_reached):
         print("MeihuaRosNode constructor TERPANGGIL")
-        self.node          = None
-        self.pub_path      = None
-        self.pub_next      = None
-        self.pub_status    = None
-        self.on_position   = on_position_cb
-        self.on_wp_reached = on_wp_reached
-        self._spin_thread  = None
-        self._active       = False
+        self.node             = None
+        self.pub_path         = None
+        self.pub_next         = None
+        self.pub_status       = None
+        self.pub_robot_start  = None
+        self.pub_retry_stage2 = None
+        self.pub_retry_stage3 = None
+        self.on_position      = on_position_cb
+        self.on_wp_reached    = on_wp_reached
+        # FIX: inisialisasi di sini supaya tidak AttributeError
+        # jika ROS message masuk sebelum MeihuaApp selesai __init__
+        self.on_wp_reached_safe = None
+        self.on_kfs_detection   = None
+        self._spin_thread       = None
+        self._active            = False
 
     def start(self):
         print("start() dipanggil")
@@ -159,7 +174,8 @@ class MeihuaRosNode:
             return False
         try:
             print("rclpy.init()")
-            rclpy.init()
+            rclpy.init(signal_handler_options=rclpy.signals.SignalHandlerOptions.NO)
+            # rclpy.init()
 
             print("create_node()")
 
@@ -167,12 +183,20 @@ class MeihuaRosNode:
             self.pub_path   = self.node.create_publisher(String, "/meihua/path_steps", 10)
             self.pub_next   = self.node.create_publisher(String, "/meihua/next_step",  10)
             self.pub_status = self.node.create_publisher(String, "/meihua/status",     10)
+            qos_tl = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+            self.pub_robot_start  = self.node.create_publisher(Bool, "/robot_start",    qos_tl)
+            self.pub_retry_stage2 = self.node.create_publisher(Bool, "/button_stage2",  10)
+            self.pub_retry_stage3 = self.node.create_publisher(Bool, "/button_stage3",  10)
             self.node.create_subscription(String, "/meihua/r2_position",self._cb_position, 10)
             self.node.create_subscription(Bool, "/meihua/r2_arrived",self._cb_arrived, 10)
             self.node.create_subscription(Bool, "/meihua/wp_reached", self._cb_wp_reached, 10)
+            # if kfs_msg_ok:
+            #     self.node.create_subscription(
+            #         KFSDetectionArray, "/kfs_detections", self._cb_kfs_detection, 10)
+
             self._active      = True
-            self._spin_thread = threading.Thread(target=self._spin, daemon=True)
-            self._spin_thread.start()
+            # self._spin_thread = threading.Thread(target=self._spin, daemon=True)
+            # self._spin_thread.start()
 
             print("start() sukses")
 
@@ -181,9 +205,13 @@ class MeihuaRosNode:
             print(f"[ROS] Error: {e}")
             return False
 
+    def start_spin(self):
+        # Tidak dipakai lagi — spin sekarang via root.after() di MeihuaApp
+        pass
+
     def _spin(self):
-        while self._active:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+        # Tidak dipakai lagi — spin sekarang via root.after() di MeihuaApp
+        pass
 
     def _cb_position(self, msg):
         try:
@@ -200,7 +228,10 @@ class MeihuaRosNode:
     def _cb_wp_reached(self, msg):
         if msg.data:
             print("[ROS] Waypoint reached, continue to next step")
-            self.on_wp_reached()
+            # FIX: pakai getattr supaya aman walau on_wp_reached_safe belum di-set
+            cb = getattr(self, 'on_wp_reached_safe', None)
+            if cb:
+                cb()
 
 
     def publish_path(self, path, goal):
@@ -242,6 +273,36 @@ class MeihuaRosNode:
         msg.data = json.dumps({"status": status, "info": extra,
                                "timestamp": time.time()})
         self.pub_status.publish(msg)
+
+    def publish_robot_start(self):
+        if not (ros_ok and self._active and self.pub_robot_start):
+            return
+        msg = Bool(); msg.data = True
+        self.pub_robot_start.publish(msg)
+        print("robot start")
+
+    def publish_retry_stage2(self):
+        if not (ros_ok and self._active and self.pub_retry_stage2):
+            return
+        msg = Bool(); msg.data = True
+        self.pub_retry_stage2.publish(msg)
+        print("retry stage 2")
+
+    def publish_retry_stage3(self):
+        if not (ros_ok and self._active and self.pub_retry_stage3):
+            return
+        msg = Bool(); msg.data = True
+        self.pub_retry_stage3.publish(msg)
+        print("retry stage 3")
+
+    # def _cb_kfs_detection(self, msg):
+    #     if not msg.detections:
+    #         return
+    #     det = max(msg.detections, key=lambda d: d.confidence)
+    #     # FIX: pakai getattr supaya aman walau callback belum di-set
+    #     cb = getattr(self, 'on_kfs_detection', None)
+    #     if cb:
+    #         cb(det)
 
     def stop(self):
         self._active = False
@@ -286,11 +347,20 @@ class MeihuaApp:
         self.ros_connected = self.ros.start() if USE_ROS else False
         print("4. Setelah start()", self.ros_connected)
 
-
         print("5. Sebelum build_ui")
 
         self._build_ui()
         print("6. Setelah build_ui")
+
+        # Set semua callback dulu sebelum spin mulai
+        self.ros.on_wp_reached_safe  = lambda: self.root.after(0, self._send_next_step)
+        self.ros.on_kfs_detection    = lambda det: self._log(
+            f"🔍 KFS detected: {det.label} conf={det.confidence:.2f}")
+
+        # FIX: Pakai pola sama seperti gui_kfs.py — spin via root.after(), TANPA thread
+        # Tidak ada race condition karena berjalan di dalam Tkinter event loop
+        if self.ros_connected:
+            self.root.after(100, self._ros_spin_loop)
 
 
         self._log(f"USE_ROS = {USE_ROS}")
@@ -380,10 +450,12 @@ class MeihuaApp:
                       command=cmd)
         b.pack(fill="x", padx=8, pady=2)
         return b
+    
 
     def _build_left(self, parent):
         # KFS Tools
         sec = self._sec(parent, "🎴  KFS PLACEMENT TOOL")
+
         for lbl, tool, col in [
             ("🟠  R1 KFS",   "R1",   "#f97316"),
             ("🔵  R2 KFS",   "R2",   "#3b82f6"),
@@ -409,6 +481,12 @@ class MeihuaApp:
         # Simulasi tombol
         self._btn(sec2, "✅  [SIM] R2 Sudah di Entry", "#4ade80",
                   self._sim_r2_arrived, small=True)
+
+        # Robot Control (dari gui_kfs)
+        sec_ctrl = self._sec(parent, "🚀  ROBOT CONTROL")
+        self._btn(sec_ctrl, "▶  START",         "#4ade80", self._send_robot_start)
+        self._btn(sec_ctrl, "↺  RETRY STAGE 2", "#f59e0b", self._send_retry_stage2, small=True)
+        self._btn(sec_ctrl, "↺  RETRY STAGE 3", "#f59e0b", self._send_retry_stage3, small=True)
 
         # Pathfinding
         sec3 = self._sec(parent, "⚡  PATHFINDING & ROS2 SEND")
@@ -918,6 +996,28 @@ class MeihuaApp:
         self.lbl_path_info.config(
             text=f"Step {self.path_step}/{len(self.path)-1}  |  "
                  f"[{r},{c}]  |  {GRID_HEIGHTS[r][c]}mm")
+
+    def _send_robot_start(self):
+        self.ros.publish_robot_start()
+        self._log("🚀 START dikirim → /robot_start")
+
+    def _send_retry_stage2(self):
+        self.ros.publish_retry_stage2()
+        self._log("↺ RETRY STAGE 2 dikirim → /button_stage2")
+
+    def _send_retry_stage3(self):
+        self.ros.publish_retry_stage3()
+        self._log("↺ RETRY STAGE 3 dikirim → /button_stage3")
+
+    def _ros_spin_loop(self):
+        """Spin ROS sekali tiap 50ms via Tkinter after() — sama persis pola gui_kfs.py.
+        Tidak pakai thread, jadi tidak ada race condition sama sekali."""
+        if self.ros._active and self.ros.node:
+            try:
+                rclpy.spin_once(self.ros.node, timeout_sec=0)
+            except Exception:
+                pass
+        self.root.after(50, self._ros_spin_loop)
 
     def _on_close(self):
         self.animating = False

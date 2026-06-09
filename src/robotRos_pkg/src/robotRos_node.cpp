@@ -21,8 +21,8 @@ PID omni_angular;
 
 class Movement : public rclcpp::Node
 {
-  
-  public:
+
+public:
   Movement() : Node("Movement_Point")
   {
     auto qos = rclcpp::QoS(10).transient_local();
@@ -41,11 +41,11 @@ class Movement : public rclcpp::Node
     waypoint_backend_sub = this->create_subscription<geometry_msgs::msg::Point>("/planner/waypoint", 10,
                                                                                 std::bind(&Movement::waypoint_backend_callback, this, std::placeholders::_1));
 
-    gui_sub = this->create_subscription<std_msgs::msg::Bool>("/kfs_decision", qos,
-                                                                        std::bind(&Movement::gui_callback, this, std::placeholders::_1));
+    gui_sub = this->create_subscription<std_msgs::msg::Bool>("/robot_start", qos,
+                                                             std::bind(&Movement::gui_callback, this, std::placeholders::_1));
 
     buttonStage3_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage3", 10,
-                                    std::bind(&Movement::toStage3_callback, this, std::placeholders::_1));
+                                                                      std::bind(&Movement::toStage3_callback, this, std::placeholders::_1));
 
     after_climb_sub = this->create_subscription<std_msgs::msg::Bool>("afterClimb", 10,
                                                                      std::bind(&Movement::after_climb_callback, this, std::placeholders::_1));
@@ -54,23 +54,23 @@ class Movement : public rclcpp::Node
     //                                                                        std::bind(&Movement::coordinate_callback, this, std::placeholders::_1));
 
     limit_stage2_sub = this->create_subscription<std_msgs::msg::Bool>("limitdata", 10,
-                                  std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
+                                                                      std::bind(&Movement::limit_stage2_callback, this, std::placeholders::_1));
 
     tof_sub = this->create_subscription<std_msgs::msg::UInt16>("tof_distance", 10,
-                                std::bind(&Movement::tof_callback, this, std::placeholders::_1));
+                                                               std::bind(&Movement::tof_callback, this, std::placeholders::_1));
 
     tof_send_pub = this->create_publisher<std_msgs::msg::UInt16>("tof_send_back", 10);
 
     lifter2_sub = this->create_subscription<std_msgs::msg::Bool>("/lifter_down2", 10,
-                                std::bind(&Movement::lifter2_callback, this, std::placeholders::_1));
+                                                                 std::bind(&Movement::lifter2_callback, this, std::placeholders::_1));
 
     reached_pub = this->create_publisher<std_msgs::msg::Bool>("/target_reached", 10);
 
     infraReceive_sub = this->create_subscription<std_msgs::msg::Bool>("infraReceive", 10,
-                                std::bind(&Movement::infra_callback, this, std::placeholders::_1));
+                                                                      std::bind(&Movement::infra_callback, this, std::placeholders::_1));
 
     reached_Astar_sub = this->create_subscription<std_msgs::msg::Bool>("/target_Astar_Done", 10,
-                                std::bind(&Movement::reached_Astar_callback, this, std::placeholders::_1));
+                                                                       std::bind(&Movement::reached_Astar_callback, this, std::placeholders::_1));
 
     proxy_true_pub = this->create_publisher<std_msgs::msg::Bool>("/true_sensor_proxy", 10);
 
@@ -79,39 +79,39 @@ class Movement : public rclcpp::Node
     climb_done_pub = this->create_publisher<std_msgs::msg::Bool>("/meihua/r2_arrived", 10);
 
     wait_lifter_sub = this->create_subscription<std_msgs::msg::Bool>("/wait_lifter", 10,
-                              std::bind(&Movement::wait_lifter_callback, this, std::placeholders::_1));
+                                                                     std::bind(&Movement::wait_lifter_callback, this, std::placeholders::_1));
 
     wp_done_pub = this->create_publisher<std_msgs::msg::Bool>("/wp_done", 10);
 
     path_list_sub = this->create_subscription<std_msgs::msg::String>("/meihua/path_steps", 10,
-                              std::bind(&Movement::path_list_callback, this, std::placeholders::_1));
+                                                                     std::bind(&Movement::path_list_callback, this, std::placeholders::_1));
 
     next_step_sub = this->create_subscription<std_msgs::msg::String>("/meihua/next_step", 10,
-                              std::bind(&Movement::next_step_callback, this, std::placeholders::_1));
+                                                                     std::bind(&Movement::next_step_callback, this, std::placeholders::_1));
 
     descend_pub = this->create_publisher<std_msgs::msg::Bool>("/start_descend", 10);
 
-
     descend_lifter_up_sub = this->create_subscription<std_msgs::msg::Bool>("/descend_lifter_up_after_down", 10,
-                              std::bind(&Movement::descend_lifter_up_callback, this, std::placeholders::_1));
+                                                                           std::bind(&Movement::descend_lifter_up_callback, this, std::placeholders::_1));
 
     checking_input_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>("/checking_input", 10,
-                              std::bind(&Movement::checking_input_callback, this, std::placeholders::_1));
+                                                                                     std::bind(&Movement::checking_input_callback, this, std::placeholders::_1));
 
     allow_lifter_up_pub = this->create_publisher<std_msgs::msg::Bool>("/allow_lifter_up", 10);
 
     stage2_exit_pub = this->create_publisher<geometry_msgs::msg::Point>("/stage2_exit_pos", 10);
 
+    solenoid_grip_pub = this->create_publisher<std_msgs::msg::Bool>("/solenoid_grip", 10);  // ← BARU
+
+
     // tambah subscriber
-    // ir_code_sub = this->create_subscription<std_msgs::msg::UInt32>("ir_raw_code", 10,
-    // [this](const std_msgs::msg::UInt32::SharedPtr msg) {
-    //     RCLCPP_INFO(this->get_logger(), "IR RAW CODE: 0x%08X", msg->data);
-    // });
-
-
+    ir_code_sub = this->create_subscription<std_msgs::msg::UInt32>("ir_raw_code", 10,
+                                                                   [this](const std_msgs::msg::UInt32::SharedPtr msg)
+                                                                   {
+                                                                     RCLCPP_INFO(this->get_logger(), "IR RAW CODE: 0x%08X", msg->data);
+                                                                   });
 
     timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&Movement::control_loop, this));
-
 
     start_received = false;
     target_received = false;
@@ -194,13 +194,14 @@ private:
     ST2_WAIT_LIFTER_UP_CONFIRM,
     ST2_REVERSE_AFTER_LIFTER,
     ST2_DONE,
-    ST2_EXIT_ROTATE
+    ST2_EXIT_ROTATE,
+    ST2_GRIP_DELAY
   };
 
   float desired_linear_vel, max_angular_vel;
 
   int stage1_target_count = 0;
-  int stage1_targets_total = 4;
+  int stage1_targets_total = 3;
   bool stage1_completed = false;
 
   bool camera_active = false;
@@ -313,6 +314,10 @@ private:
   bool wait_lifter_timer_init = false;
   bool wait_lifter_st2_timer_init = false;
 
+  double grip_delay_ms = 1500.0;    // ← sesuaikan waktu tunggu solenoid (ms)
+  double grip_delay_start_time = 0.0;
+  bool   grip_delay_timer_init = false;
+
   // ── Fall detection saat naik (ST2_STRAIGHT_CLIMB) ────────────────────────
 
   // float pitch_prev = 0.0;
@@ -346,7 +351,7 @@ private:
 
     odom_robot_yaw = -odom_robot_yaw;
 
-    RCLCPP_INFO(this->get_logger(), "heading %.2f", odom_robot_yaw);
+    // RCLCPP_INFO(this->get_logger(), "heading %.2f", odom_robot_yaw);
 
     return odom_robot_yaw;
   }
@@ -387,7 +392,7 @@ private:
     if (current_state == STRAIGHT_FOR_CLIMB ||
         current_state == STAGE2_MOVE_STEPbSTEP)
     {
-      RCLCPP_WARN(this->get_logger(), "pose_callback IGNORED — robot sedang stage2/climb");
+      // RCLCPP_WARN(this->get_logger(), "pose_callback IGNORED — robot sedang stage2/climb");
       return;
     }
 
@@ -396,7 +401,7 @@ private:
     target_received = true;
     target_reached_flag = false;
 
-    if(current_state == MOVING_TO_TARGET_STAGE3)
+    if (current_state == MOVING_TO_TARGET_STAGE3)
     {
       RCLCPP_INFO(this->get_logger(), "STAGE3: target updated (%.2f, %.2f)", targetX, targetY);
       return;
@@ -474,14 +479,14 @@ private:
 
       // RCLCPP_INFO(this->get_logger()," pos lifter", msg->data[6]);
 
-      RCLCPP_INFO(this->get_logger(),
-            "Pos Lifter: %.2f",
-            // msg->data[0],  // rps1
-            // msg->data[1],  // rps2
-            // msg->data[2],  // rps3
-            // msg->data[3], // rps4
-            // msg->data[5],  // pitch
-            msg->data[6]); // pos lifter
+      // RCLCPP_INFO(this->get_logger(),
+      //       "Pos Lifter: %.2f",
+      //       // msg->data[0],  // rps1
+      //       // msg->data[1],  // rps2
+      //       // msg->data[2],  // rps3
+      //       // msg->data[3], // rps4
+      //       // msg->data[5],  // pitch
+      //       msg->data[6]); // pos lifter
     }
   }
 
@@ -505,45 +510,20 @@ private:
     RCLCPP_INFO(this->get_logger(), "Decision received -> robot boleh jalan");
   }
 
+  bool button3 = false;
 
-  bool button3 = false; 
-  
   void toStage3_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
 
-    bool button3 = true;
-    
+    button3 = true;
+
     RCLCPP_INFO(this->get_logger(), "button stage 3 received -> robot lanjut jalan di stage3");
   }
 
   void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
   {
 
-    // wp_x = msg->x;
-    // wp_y = msg->y;
 
-    // double CELL_SIZE = 1.2;
-
-    // targetX_world = (wp_x * CELL_SIZE) + (CELL_SIZE / 2.0);
-    // targetY_world = (wp_y * CELL_SIZE) + (CELL_SIZE / 2.0);
-
-    // need_climb = (msg->z == 1.0);
-
-    // has_wp = true;
-    // wp_done_sent = false;
-    // goal_done = false;
-    // climb_finished = false;
-    // wp_processing = false;
-
-    // st2_state = ST2_IDLE;
-
-    // RCLCPP_INFO(this->get_logger(), "New WP: %.2f %.2f", wp_x, wp_y);
-
-    // RCLCPP_INFO(this->get_logger(), "New WP grid(%.0f,%.0f) need_climb=%d", wp_x, wp_y, (int)need_climb);
-
-    // RCLCPP_INFO(this->get_logger(), "Target World: %.2f %.2f", targetX_world, targetY_world);
-    // // RCLCPP_INFO(this->get_logger(), "New WP grid(%.0f,%.0f) world(%.2f,%.2f)",
-    //             msg->x, msg->y, targetX_world, targetY_world);
   }
 
   bool limit_active = false;
@@ -641,8 +621,19 @@ private:
           return;
         }
 
-        st2_state = ST2_WAIT_LIFTER;
-        RCLCPP_INFO(this->get_logger(), "PROXY → ST2_WAIT_LIFTER (mundur)");
+        if(!need_reverse)
+        {
+           // mode naik: solenoid harus aktif dulu sebelum lifter naik
+          grip_delay_timer_init = false;
+          st2_state = ST2_GRIP_DELAY;
+          RCLCPP_INFO(this->get_logger(), "wait_lifter (naik) -> ST2_GRIP_DELAY (solenoid dulu)");
+        }
+        else
+        {
+          st2_state = ST2_WAIT_LIFTER;
+          RCLCPP_INFO(this->get_logger(), "PROXY → ST2_WAIT_LIFTER (mundur)");
+        }
+
 
         // RCLCPP_WARN(this->get_logger(), "wait_lifter ignored, state=%d need_reverse=%d", (int)st2_state, need_reverse);
         // return;
@@ -654,8 +645,6 @@ private:
 
   void reached_Astar_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-
-
   }
   bool goal_done = false;
 
@@ -795,26 +784,20 @@ private:
   int current_grid_col = 1;
 
   const double CELL_SIZE = 1.2;
-  const double GRID_ORIGIN_X = 1.35;
-  const double GRID_ORIGIN_Y = -1.25;
+  // const double GRID_ORIGIN_X = 1.35;
+  // const double GRID_ORIGIN_Y = -1.25;
+
+  const double GRID_ORIGIN_X = 2.952;
+  const double GRID_ORIGIN_Y = -2.638;
 
   void update_target_from_step(int target_row, int target_col, int target_height, const std::string &dir)
   {
-    // const double CELL_SIZE = 1.2; // meter per grid
-
-    // if (dir == "RIGHT")      { targetX_world = currentX + CELL_SIZE; targetY_world = currentY; }
-    // else if (dir == "LEFT")  { targetX_world = currentX - CELL_SIZE; targetY_world = currentY; }
-    // else if (dir == "UP")    { targetX_world = currentX;             targetY_world = currentY + CELL_SIZE; }
-    // else if (dir == "DOWN")  { targetX_world = currentX;             targetY_world = currentY - CELL_SIZE; }
-    // else
-    // {
-    //     RCLCPP_WARN(this->get_logger(), "Unknown step received: %s", dir.c_str());
-    //     return;
-    // }
-    // RCLCPP_INFO(this->get_logger(), "Target set → (%.2f, %.2f)", targetX_world, targetY_world);
-
-    targetY_world = -(GRID_ORIGIN_Y + (target_col * CELL_SIZE));
+    targetY_world = (GRID_ORIGIN_Y + (target_col * CELL_SIZE));
     targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
+
+
+    // targetY_world = -(GRID_ORIGIN_Y + (target_col * CELL_SIZE));
+    // targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
 
     int height_diff = target_height - current_grid_height;
 
@@ -886,7 +869,14 @@ private:
       else
       {
         descend_lifter_up_received = true;
-        RCLCPP_INFO(this->get_logger(), "DESCEND LIFTER UP → lanjut mundur");
+        RCLCPP_INFO(this->get_logger(), "DESCEND LIFTER UP -> lanjut mundur");
+
+        // lifter sudah sampai bawah → aktifkan solenoid grip KFS
+        std_msgs::msg::Bool sol_on;
+        sol_on.data = true;
+        solenoid_grip_pub->publish(sol_on);
+        grip_delay_timer_init = false;   // reset timer untuk millis solenoid
+        RCLCPP_INFO(this->get_logger(), "LIFTER BAWAH -> solenoid ON, mulai millis");
       }
       // descend_lifter_up_received = true;
 
@@ -934,7 +924,7 @@ private:
       RCLCPP_INFO(this->get_logger(), "posisi x %f", currentX);
       RCLCPP_INFO(this->get_logger(), "posisi y %f\n", currentY);
       // RCLCPP_INFO(this->get_logger(), "posisi y %f\n", msg->data[6]);
-      
+
       return;
     }
 
@@ -975,7 +965,11 @@ private:
       RCLCPP_INFO(this->get_logger(), "dx: %f dy: %f", dx, dy);
       // RCLCPP_INFO(this->get_logger(), "posisi y", currentY);
 
-      if (distance > 0.05)
+      double tol_x = 0.03;
+      double tol_y = 0.03;
+
+      // if (distance > 0.03)
+      if (fabs(dx) > tol_x || fabs(dy) > tol_y)
       {
 
         cmd.linear.x = 0.2 * std::cos(angle);
@@ -991,8 +985,8 @@ private:
       {
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
-        cmd.angular.z = -controlled_angle;
-        // cmd.angular.z = 0.0;
+        // cmd.angular.z = -controlled_angle;
+        cmd.angular.z = 0.0;
 
         RCLCPP_INFO(this->get_logger(), "holding position");
 
@@ -1030,7 +1024,7 @@ private:
               // RCLCPP_INFO(this->get_logger(), "Stage3 WP reached, tidak trigger climb");
             }
           }
-            // RCLCPP_INFO(this->get_logger(), "target reached");
+          // RCLCPP_INFO(this->get_logger(), "target reached");
           else
           {
 
@@ -1088,12 +1082,12 @@ private:
 
     case STRAIGHT_FOR_CLIMB:
     {
-      cmd.linear.x = 0.3;
-      cmd.linear.y = 0.0;
-      // cmd.angular.z = 0.0;
-      cmd.angular.z = -controlled_angle;
+      cmd.linear.x = 0.4;
+      cmd.linear.y = 0.0; 
+      cmd.angular.z = 0.0;
+      // cmd.angular.z = -controlled_angle;
 
-      RCLCPP_INFO(this->get_logger(), "STRAIGHT MODE - jalan lurus");
+      RCLCPP_INFO(this->get_logger(), "STRAIGHT MODE - MODE CLIMB jalan lurus");
 
       break;
     }
@@ -1112,10 +1106,10 @@ private:
         wait_lifter_timer_init = true;
         RCLCPP_WARN(this->get_logger(), "WAIT_LIFTER: timer dimulai (timeout 5s)");
       }
- 
+
       double wait_elapsed = this->now().seconds() - wait_lifter_start_time;
       RCLCPP_INFO(this->get_logger(), "WAITING LIFTER (stage1) elapsed=%.1fs", wait_elapsed);
- 
+
       if (wait_elapsed > 5.0)
       {
         wait_lifter_timer_init = false;
@@ -1186,11 +1180,23 @@ private:
         cmd.linear.y = 0.0;
         cmd.angular.z = -controlled_angle;
 
+        double entry_raw_x = currentX - odom_offset_x;
+        double entry_raw_y = currentY - odom_offset_y;
+
+        odom_offset_x = 2.952 - entry_raw_x;
+        odom_offset_y = -1.438 - entry_raw_y;
+
+        RCLCPP_INFO(this->get_logger(),
+            "ENTRY STAGE2: currentX=%.3f currentY=%.3f heading=%.3f",
+            currentX, currentY, heading);
+
+
         std_msgs::msg::Bool reachedClimb_msg;
         reachedClimb_msg.data = true;
         climb_done_pub->publish(reachedClimb_msg);
 
         RCLCPP_INFO(this->get_logger(), "masuk stage 2");
+
 
         current_state = STAGE2_MOVE_STEPbSTEP;
 
@@ -1339,7 +1345,12 @@ private:
           }
           else if (need_climb && !need_reverse)
           {
-            st2_state = ST2_WAIT_LIFTER;
+            // st2_state = ST2_WAIT_LIFTER;
+
+            grip_delay_timer_init = false;
+            st2_state = ST2_GRIP_DELAY;
+            RCLCPP_INFO(this->get_logger(), "need_climb → ST2_GRIP_DELAY (solenoid dulu baru lifter naik)");
+
           }
           else
           {
@@ -1491,6 +1502,7 @@ private:
           lifter_up_confirmed = false;
           waiting_for_lifter_up_confirm = false;
 
+  
           if (has_pending_step)
           {
             update_target_from_step(pending_row, pending_col, pending_height, pending_dir);
@@ -1548,33 +1560,60 @@ private:
           wait_lifter_st2_timer_init = true;
           RCLCPP_WARN(this->get_logger(), "ST2_WAIT_LIFTER: timer dimulai (timeout 5s)");
         }
- 
+
         double st2_wait_elapsed = this->now().seconds() - wait_lifter_st2_start_time;
         RCLCPP_INFO(this->get_logger(), "WAITING LIFTER IN STAGE 2 elapsed=%.1fs", st2_wait_elapsed);
 
         if (descend_lifter_up_received && need_reverse)
         {
-          descend_lifter_up_received = false;
-          proxy_stop_triggered = false;
-          proxy_was_seen = false;
-          st2_reverse_start_time = 0.0;
-          pitch_stable_count = 0;
-          wait_lifter_st2_timer_init = false;
+          // tunggu millis solenoid selesai dulu sebelum robot gerak
+          if (!grip_delay_timer_init)
+          {
+            grip_delay_start_time = this->now().seconds();
+            grip_delay_timer_init = true;
+            RCLCPP_INFO(this->get_logger(), "LIFTER BAWAH: tunggu millis solenoid %.0f ms", grip_delay_ms);
+          }
 
-          targetX_world = currentX;
-          targetY_world = currentY;
+          double grip_elapsed_ms = (this->now().seconds() - grip_delay_start_time) * 1000.0;
 
-          st2_state = ST2_REVERSE_AFTER_LIFTER;
+          if (grip_elapsed_ms >= grip_delay_ms)
+          {
+            // millis selesai → solenoid OFF → robot boleh gerak
+            std_msgs::msg::Bool sol_off;
+            sol_off.data = false;
+            solenoid_grip_pub->publish(sol_off);
+            RCLCPP_INFO(this->get_logger(), "millis selesai -> solenoid OFF -> robot gerak");
 
-          RCLCPP_INFO(this->get_logger(), "LIFTER UP DETECTED → lanjut maju mundur");
+            descend_lifter_up_received = false;
+            grip_delay_timer_init = false;
+            proxy_stop_triggered = false;
+            proxy_was_seen = false;
+            st2_reverse_start_time = 0.0;
+            pitch_stable_count = 0;
+            wait_lifter_st2_timer_init = false;
+
+            targetX_world = currentX;
+            targetY_world = currentY;
+
+            st2_state = ST2_REVERSE_AFTER_LIFTER;
+            RCLCPP_INFO(this->get_logger(), "LANJUT ST2_REVERSE_AFTER_LIFTER");
+          }
         }
         else
         {
           if (st2_wait_elapsed > 5.0)
           {
+
+            std_msgs::msg::Bool sol_off;
+            sol_off.data = false;
+            solenoid_grip_pub->publish(sol_off);
+
+            RCLCPP_ERROR(this->get_logger(),"TIMEOUT -> SOLENOID OFF DIKIRIM");
+
+
             wait_lifter_st2_timer_init = false;
             st2_state = ST2_AFTER_CLIMB;
-            RCLCPP_WARN(this->get_logger(), "ST2_WAIT_LIFTER TIMEOUT (naik) → paksa ST2_AFTER_CLIMB");
+            RCLCPP_WARN(this->get_logger(), "ST2_WAIT_LIFTER TIMEOUT (naik) -> paksa ST2_AFTER_CLIMB");
           }
         }
 
@@ -1606,20 +1645,20 @@ private:
 
           RCLCPP_INFO(this->get_logger(), "EXIT ROTATE stable count: %d/5", exit_rotate_stable_count);
 
-          if(exit_rotate_stable_count >= 5)
+          if (exit_rotate_stable_count >= 5)
           {
             exit_rotate_stable_count = 0;
-            
+
             geometry_msgs::msg::Point exit_msg;
             exit_msg.x = currentX;
             exit_msg.y = currentY;
             stage2_exit_pub->publish(exit_msg);
-  
-            std_msgs::msg::Bool reached_msg;
-            reached_msg.data = true;
-            reached_pub->publish(reached_msg);
+
+            // std_msgs::msg::Bool reached_msg;
+            // reached_msg.data = true;
+            // reached_pub->publish(reached_msg);
             RCLCPP_INFO(this->get_logger(), "EXIT ROTATE DONE → STAGE 3 pos=(%.2f, %.2f)", currentX, currentY);
-  
+
             // current_state = MOVING_TO_TARGET;
             current_state = MOVING_TO_TARGET_STAGE3;
             st2_state = ST2_IDLE;
@@ -1689,9 +1728,56 @@ private:
 
           st2_state = ST2_POST_CLIMB;
           stop_initialize = false;
+
+          // stop_initialize = false;
+          // grip_delay_timer_init = false;   // reset timer grip
+          // st2_state = ST2_GRIP_DELAY;
+          // RCLCPP_INFO(this->get_logger(), "ST2 STOP SENSOR → ST2_GRIP_DELAY");
         }
 
         RCLCPP_INFO(this->get_logger(), "ST2 STOP SENSOR");
+
+        break;
+      }
+
+      case ST2_GRIP_DELAY:
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+
+        if (!grip_delay_timer_init)
+        {
+          grip_delay_start_time = this->now().seconds();
+          grip_delay_timer_init = true;
+
+          // ← Publish solenoid ON → hardware aktifkan gripper grip KFS
+          std_msgs::msg::Bool sol_msg;
+          sol_msg.data = true;
+          solenoid_grip_pub->publish(sol_msg);
+
+          RCLCPP_WARN(this->get_logger(),
+                      "ST2_GRIP_DELAY: solenoid gripper aktif, tunggu %.0f ms sebelum lifter naik",
+                      grip_delay_ms);
+        }
+
+        double grip_elapsed_ms = (this->now().seconds() - grip_delay_start_time) * 1000.0;
+        RCLCPP_INFO(this->get_logger(),
+                    "ST2_GRIP_DELAY: elapsed=%.0f ms / %.0f ms", grip_elapsed_ms, grip_delay_ms);
+
+        if (grip_elapsed_ms >= grip_delay_ms)
+        {
+          grip_delay_timer_init = false;
+
+          // Simpan posisi awal untuk ST2_POST_CLIMB
+          start_x_after_climb = currentX;
+          start_y_after_climb = currentY;
+
+          // Masuk WAIT_LIFTER → izinkan lifter naik
+          st2_state = ST2_WAIT_LIFTER;
+          RCLCPP_INFO(this->get_logger(),
+                      "ST2_GRIP_DELAY SELESAI → ST2_WAIT_LIFTER (lifter boleh naik)");
+        }
 
         break;
       }
@@ -1799,7 +1885,7 @@ private:
       break;
     }
 
-    // =====================================================STAGE 3============================================================
+      // =====================================================STAGE 3============================================================
 
     case MOVING_TO_TARGET_STAGE3:
     {
@@ -1807,9 +1893,9 @@ private:
       bool is_climbing = fabs(hardware_pitch) > 1.5;
 
       RCLCPP_INFO(this->get_logger(), "STAGE3 MOVE: pos(%.2f,%.2f) target(%.2f,%.2f) dist=%.3f",
-              currentX, currentY, targetX, targetY, distance);
+                  currentX, currentY, targetX, targetY, distance);
 
-      if(is_climbing || climbing_stage3)
+      if (is_climbing || climbing_stage3)
       {
         climbing_stage3 = true;
 
@@ -1819,14 +1905,14 @@ private:
 
         RCLCPP_INFO(this->get_logger(), "STAGE3 CLIMBING pitch=%.2f", hardware_pitch);
 
-        if(fabs(hardware_pitch) < 1.0)
+        if (fabs(hardware_pitch) < 1.0)
         {
           climbing_stage3 = false;
           RCLCPP_INFO(this->get_logger(), "STAGE3 CLIMB DONE → balik odom");
         }
       }
 
-      else if(distance > 0.03)
+      else if (distance > 0.03)
       {
         // cmd.linear.x = controlled_distance * std::cos(angle);
         cmd.linear.x = 0.3 * std::cos(angle);
@@ -1840,7 +1926,7 @@ private:
         cmd.linear.y = 0.0;
         cmd.angular.z = -controlled_angle;
 
-        if(!target_reached_flag)
+        if (!target_reached_flag)
         {
           target_reached_flag = true;
           current_state = TARGET_REACHED;
@@ -1850,11 +1936,9 @@ private:
           reached_pub->publish(reached_msg);
 
           RCLCPP_INFO(this->get_logger(), "STAGE3 WP REACHED → publish reached");
-
         }
       }
       break;
-
     }
 
     case TARGET_REACHED:
@@ -1909,6 +1993,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr climb_done_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wp_done_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr solenoid_grip_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr allow_lifter_up_pub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage3_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_sub;

@@ -43,8 +43,8 @@ public:
 
         {0.0, 1.0},
         {1.0, 1.0},
-        {1.0, -1.5},
-        {1.5, -1.5}
+        {1.0, -1.45},
+        {1.5, -1.45}
     };
 
     current_waypoint_index = 0;
@@ -145,18 +145,18 @@ private:
     // WP0 action
     if (current_waypoint_index == 0)
     {
-      // std_msgs::msg::Bool lifter_msg;
-      // lifter_msg.data = true;
-      // lifter_pub->publish(lifter_msg);
+      std_msgs::msg::Bool lifter_msg;
+      lifter_msg.data = true;
+      lifter_pub->publish(lifter_msg);
 
       // RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
 
-      RCLCPP_INFO(this->get_logger(), "WP0 reached → lanjut ke WP1, lifter turun dalam 1500ms...");
+      // RCLCPP_INFO(this->get_logger(), "WP0 reached → lanjut ke WP1, lifter turun dalam 1500ms...");
  
-      advance_waypoint();           // robot langsung jalan ke WP1
+      // advance_waypoint();           // robot langsung jalan ke WP1
  
-      trigger_lifter_delayed(1400); // lifter turun 1500ms kemudian (sambil robot jalan)
-      return;
+      // trigger_lifter_delayed(1400); // lifter turun 1500ms kemudian (sambil robot jalan)
+      // return;
     }
 
     // WP1 → WAIT IR
@@ -166,6 +166,14 @@ private:
       waiting_ir = true;
 
       RCLCPP_INFO(this->get_logger(), "WAITING IR...");
+      return;
+    }
+
+    if(current_waypoint_index == 2)
+    {
+      waypoint[3].second = current_robot_y;
+      RCLCPP_INFO(this->get_logger(), "WP3 di-snap ke Y robot: %.3f", current_robot_y);
+      advance_waypoint();
       return;
     }
 

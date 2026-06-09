@@ -25,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             # 'cam = mehua_forest.cam:main',
-            'main = mehua_forest.main:main'
+            # 'main = mehua_forest.main:main'
+            'led = mehua_forest.led:main',
         ],
     },
 )
