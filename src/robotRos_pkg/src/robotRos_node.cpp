@@ -97,6 +97,10 @@ public:
     checking_input_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>("/checking_input", 10,
                                                                                      std::bind(&Movement::checking_input_callback, this, std::placeholders::_1));
 
+
+    buttonStage2_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage2", 10,
+                                                                      std::bind(&Movement::buttonStage2_callback, this, std::placeholders::_1));
+
     allow_lifter_up_pub = this->create_publisher<std_msgs::msg::Bool>("/allow_lifter_up", 10);
 
     stage2_exit_pub = this->create_publisher<geometry_msgs::msg::Point>("/stage2_exit_pos", 10);
@@ -201,7 +205,13 @@ private:
   float desired_linear_vel, max_angular_vel;
 
   int stage1_target_count = 0;
-  int stage1_targets_total = 3;
+  
+  const int STAGE1_TARGETS_NORMAL = 3;
+  const int STAGE2_TARGETS_RETRY = 4;
+
+  int stage1_targets_total = STAGE1_TARGETS_NORMAL;
+  // int stage1_targets_total = 3;
+
   bool stage1_completed = false;
 
   bool camera_active = false;
@@ -488,6 +498,35 @@ private:
       //       // msg->data[5],  // pitch
       //       msg->data[6]); // pos lifter
     }
+  }
+
+
+  bool retry_mode = false;
+
+  void buttonStage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (!msg->data) return;
+
+    RCLCPP_INFO(this->get_logger(), "RETRY STAGE 2 → Reset state node ke WAITING_FOR_TARGET");
+
+    retry_mode = true;
+    stage1_climb_done = true;
+    stage1_target_count = 0;
+    stage1_targets_total = STAGE2_TARGETS_RETRY;
+
+    // Reset semua state agar pose_callback tidak diblokir
+    current_state     = WAITING_FOR_TARGET;
+    st2_state         = ST2_IDLE;
+    is_stage2         = false;
+    target_received   = false;
+    target_reached_flag = false;
+    climb_finished    = false;
+    wp_processing     = false;
+    has_wp            = false;
+    goal_active       = false;   // kalau ada
+    limit_triggered   = false;
+    stage2_triggred   = false;
+    stage2_entry_locked = false;
   }
 
   bool lifter_down2_flag = false;
@@ -1010,7 +1049,7 @@ private:
             stage1_target_count = 0;
             target_received = false;
 
-            if (!stage1_climb_done)
+            if (!stage1_climb_done && !retry_mode)
             {
               stage1_completed = true;
               stage1_climb_done = true;
@@ -1020,6 +1059,13 @@ private:
             else
             {
               current_state = TARGET_REACHED;
+
+              if(retry_mode)
+              {
+                retry_mode = false;
+                stage1_targets_total = STAGE1_TARGETS_NORMAL;
+                RCLCPP_INFO(this->get_logger(), "RETRY SELESAI → targets_total dikembalikan ke %d", STAGE1_TARGETS_NORMAL);
+              }
               RCLCPP_INFO(this->get_logger(), "STAGE3 WP reached, waiting next");
               // RCLCPP_INFO(this->get_logger(), "Stage3 WP reached, tidak trigger climb");
             }
@@ -2002,6 +2048,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr next_step_sub;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr stage2_exit_pub;
   rclcpp::Subscription<std_msgs::msg::UInt32>::SharedPtr ir_code_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
   // di bagian private class Movement
   nav_msgs::msg::Odometry odom_robot_msg;
 

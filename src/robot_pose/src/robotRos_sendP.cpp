@@ -27,6 +27,9 @@ public:
     exit_pos_sub = this->create_subscription<geometry_msgs::msg::Point>("/stage2_exit_pos", 10,
                                                                         std::bind(&waypointPublish::exit_pos_callback, this, std::placeholders::_1));
 
+    buttonStage2_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage2", 10,
+                                                                      std::bind(&waypointPublish::buttonStage2_callback, this, std::placeholders::_1));
+
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
                                                                   [this](const nav_msgs::msg::Odometry::SharedPtr msg)
                                                                   {
@@ -44,8 +47,7 @@ public:
         {0.0, 1.0},
         {1.0, 1.0},
         {1.0, -1.45},
-        {1.5, -1.45}
-    };
+        {1.5, -1.45}};
 
     current_waypoint_index = 0;
     waiting_ir = false;
@@ -76,6 +78,7 @@ private:
   bool stage2_done = false;
   bool exit_pos_pushed = false;
   bool stage1_done = false;
+  bool retry_mode = false;
 
   size_t current_waypoint_index;
 
@@ -141,6 +144,11 @@ private:
     reached_latched = true;
 
     RCLCPP_INFO(this->get_logger(), "WAYPOINT REACHED: %ld", current_waypoint_index);
+    if (retry_mode)
+    {
+      advance_waypoint();
+      return;
+    }
 
     // WP0 action
     if (current_waypoint_index == 0)
@@ -152,9 +160,9 @@ private:
       // RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
 
       // RCLCPP_INFO(this->get_logger(), "WP0 reached → lanjut ke WP1, lifter turun dalam 1500ms...");
- 
+
       // advance_waypoint();           // robot langsung jalan ke WP1
- 
+
       // trigger_lifter_delayed(1400); // lifter turun 1500ms kemudian (sambil robot jalan)
       // return;
     }
@@ -169,7 +177,7 @@ private:
       return;
     }
 
-    if(current_waypoint_index == 2)
+    if (current_waypoint_index == 2)
     {
       waypoint[3].second = current_robot_y;
       RCLCPP_INFO(this->get_logger(), "WP3 di-snap ke Y robot: %.3f", current_robot_y);
@@ -179,6 +187,44 @@ private:
 
     // WP lainnya langsung lanjut
     advance_waypoint();
+  }
+
+  std::vector<std::pair<double, double>> retry_waypoints = {
+      // {0.0, 0.0}, // WP0 — titik awal / sudut pertama
+      {1.0, 0.0}, // WP1 — maju
+      {1.0, 1.0}, // WP2 — belok kanan
+      {0.0, 1.0}, // WP3 — balik
+      {0.0, 0.0}  // WP4 — kembali ke titik awal (tutup segi empat)
+
+
+      // {1.0, 0.0},
+      // {1.0, 1.0},
+      // {0.0, 1.0},
+      // {0.0, 0.0}
+  };
+
+  void buttonStage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (!msg->data)
+      return;
+
+    RCLCPP_INFO(this->get_logger(), "RETRY STAGE 2 DITERIMA → Reset & kirim ulang WP1");
+
+    all_completed = false;
+    reached_latched = false;
+    waiting_ir = false;
+    limit_triggered = false;
+    stage1_done = false;
+    stage2_done = false;
+    exit_pos_pushed = false;
+    exit_pos_received = false;
+
+    retry_mode = true;                    // ← DITAMBAH
+    state = WP_STATE::MOVING;  
+    waypoint = retry_waypoints;
+    current_waypoint_index = 0;
+
+    send_waypoint();
   }
 
   void limit_callback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -211,7 +257,7 @@ private:
 
     advance_waypoint();
 
-    trigger_lifter_delayed(1400); 
+    trigger_lifter_delayed(1400);
   }
 
   void exit_pos_callback(const geometry_msgs::msg::Point::SharedPtr msg)
@@ -272,7 +318,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_sub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::TimerBase::SharedPtr lifter_timer;
-  // rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr toStage2_pub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
 
   std::vector<std::pair<double, double>> waypoint;
 };
