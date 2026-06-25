@@ -8,6 +8,7 @@
 #include <std_msgs/msg/u_int32.hpp>
 #include "gui_kfs_msgs/msg/kfs_decision.hpp"
 #include <std_msgs/msg/float32_multi_array.hpp>
+#include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <pid.hpp>
 #include <convertion.hpp>
 #include <cmath>
@@ -101,12 +102,23 @@ public:
     buttonStage2_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage2", 10,
                                                                       std::bind(&Movement::buttonStage2_callback, this, std::placeholders::_1));
 
+
+    // entry_point_sub = this->create_subscription<std_msgs::msg::String>("/meihua/entry_point", 10,
+    //                                                                   std::bind(&Movement::entryPoint_callback, this, std::placeholders::_1));
+
     allow_lifter_up_pub = this->create_publisher<std_msgs::msg::Bool>("/allow_lifter_up", 10);
 
     stage2_exit_pub = this->create_publisher<geometry_msgs::msg::Point>("/stage2_exit_pos", 10);
 
     solenoid_grip_pub = this->create_publisher<std_msgs::msg::Bool>("/solenoid_grip", 10);  // ← BARU
 
+    bluePill_sub = this->create_subscription<std_msgs::msg::UInt8MultiArray>("bluePill_data", 10,
+      std::bind(&Movement::bluepill_callback, this, std::placeholders::_1));
+
+
+    lifter_entry_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_entry_stage2", 10);
+       
+    
 
     // tambah subscriber
     ir_code_sub = this->create_subscription<std_msgs::msg::UInt32>("ir_raw_code", 10,
@@ -328,6 +340,12 @@ private:
   double grip_delay_start_time = 0.0;
   bool   grip_delay_timer_init = false;
 
+
+  bool proxy1_left = false;
+  bool proxy1_right = false;
+  bool proxy2_left = false;
+  bool proxy2_right = true;
+
   // ── Fall detection saat naik (ST2_STRAIGHT_CLIMB) ────────────────────────
 
   // float pitch_prev = 0.0;
@@ -527,6 +545,7 @@ private:
     limit_triggered   = false;
     stage2_triggred   = false;
     stage2_entry_locked = false;
+    
   }
 
   bool lifter_down2_flag = false;
@@ -890,6 +909,30 @@ private:
                 targetX_world, targetY_world, need_reverse, need_rotate, rotate_target_yaw);
   }
 
+  // void entryPoint_callback(const std_msgs::msg::String::SharedPtr msg)
+  // {
+  //   int col = parse_int_from_json(msg->data, "col");
+
+
+  //   if(col != -1)
+  //   {
+  //     current_grid_col = col;
+  //     RCLCPP_INFO(this->get_logger(), "Motion Node: Posisi awal Stage 2 diupdate ke grid (0, %d)", current_grid_col);
+  //   }
+  // }
+
+  void bluepill_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg)
+  {
+    if (msg->data.size() >= 8)
+    {
+        // Ambil data sesuai urutan index dari Teensy
+        proxy1_left  = msg->data[4]; 
+        proxy1_right = msg->data[5];
+        proxy2_left  = msg->data[6];
+        proxy2_right = msg->data[7];
+    }
+  }
+
   bool descend_lifter_up_received = false;
 
   void descend_lifter_up_callback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -930,11 +973,6 @@ private:
   {
     if (!start_received)
       return;
-
-    // if ((current_state == WAITING_FOR_TARGET || current_state == MOVING_TO_TARGET) && !target_received)
-    //   return;
-    // if (!target_received || current_state == MOVING_TO_TARGET)
-    //   return;
 
     double currT = this->now().seconds();
     float deltaT = currT - prevT;
@@ -1130,150 +1168,176 @@ private:
     {
       cmd.linear.x = 0.4;
       cmd.linear.y = 0.0; 
-      cmd.angular.z = 0.0;
-      // cmd.angular.z = -controlled_angle;
-
-      RCLCPP_INFO(this->get_logger(), "STRAIGHT MODE - MODE CLIMB jalan lurus");
-
-      break;
-    }
-
-    case WAIT_LIFTER:
-    {
-      cmd.linear.x = 0.0;
-      cmd.linear.y = 0.0;
-      cmd.angular.z = 0.0;
-
-      RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
-
-      if (!wait_lifter_timer_init)
-      {
-        wait_lifter_start_time = this->now().seconds();
-        wait_lifter_timer_init = true;
-        RCLCPP_WARN(this->get_logger(), "WAIT_LIFTER: timer dimulai (timeout 5s)");
-      }
-
-      double wait_elapsed = this->now().seconds() - wait_lifter_start_time;
-      RCLCPP_INFO(this->get_logger(), "WAITING LIFTER (stage1) elapsed=%.1fs", wait_elapsed);
-
-      if (wait_elapsed > 5.0)
-      {
-        wait_lifter_timer_init = false;
-        RCLCPP_WARN(this->get_logger(), "WAIT_LIFTER TIMEOUT → paksa lanjut ke AFTER_CLIMB");
-        current_state = AFTER_CLIMB;
-      }
-
-      break;
-    }
-
-    case AFTER_CLIMB:
-    {
-      cmd.linear.x = 0.4;
-      cmd.linear.y = 0.0;
       // cmd.angular.z = 0.0;
       cmd.angular.z = -controlled_angle;
 
-      RCLCPP_INFO(this->get_logger(), "LIFTER TURUN MASUK KE MODE PELAN");
+      RCLCPP_INFO(this->get_logger(), "Mencari Dinding Stage 2 (Menunggu Proxy Depan)...");
 
-      break;
-    }
-
-    case STOP_SENSOR:
-    {
-      cmd.linear.x = 0.0;
-      cmd.linear.y = 0.0;
-      cmd.angular.z = 0.0;
-      // cmd.angular.z = -controlled_angle;
-
-      RCLCPP_INFO(this->get_logger(), "STOP 1 sensor WAITING LIFTER");
-
-      if (!stop_initialize)
-      {
-        stop_time = this->now().seconds();
-        stop_initialize = true;
-      }
-
-      // if(!start_saved)
-      if (this->now().seconds() - stop_time > 2.0)
-      {
-        start_x_after_climb = currentX;
-        start_y_after_climb = currentY;
-
-        start_saved = true;
-
-        current_state = POST_CLIMB_MOVE;
-      }
-
-      break;
-    }
-
-    case POST_CLIMB_MOVE:
-    {
-
-      double dx = currentX - start_x_after_climb;
-      double dy = currentY - start_y_after_climb;
-      double dist = sqrt(dx * dx + dy * dy);
-
-      if (dist < 0.2)
-      {
-        cmd.linear.x = 0.3;
-        cmd.linear.y = 0.0;
-        cmd.angular.z = 0.0;
-      }
-      else
+      if(!proxy2_right)
       {
         cmd.linear.x = 0.0;
-        cmd.linear.y = 0.0;
-        cmd.angular.z = -controlled_angle;
+        cmd.angular.z = 0.0;
 
-        double entry_raw_x = currentX - odom_offset_x;
-        double entry_raw_y = currentY - odom_offset_y;
+        std_msgs::msg::Bool lifter_msg;
+        lifter_msg.data = true;
+        lifter_entry_pub->publish(lifter_msg);
 
-        odom_offset_x = 2.952 - entry_raw_x;
-        odom_offset_y = -1.438 - entry_raw_y;
+        wait_lifter_timer_init = false;
 
-        RCLCPP_INFO(this->get_logger(),
-            "ENTRY STAGE2: currentX=%.3f currentY=%.3f heading=%.3f",
-            currentX, currentY, heading);
-
-
-        std_msgs::msg::Bool reachedClimb_msg;
-        reachedClimb_msg.data = true;
-        climb_done_pub->publish(reachedClimb_msg);
-
-        RCLCPP_INFO(this->get_logger(), "masuk stage 2");
-
-
-        current_state = STAGE2_MOVE_STEPbSTEP;
-
-        is_stage2 = true;
-        start_saved = false;
-        stage2_initiallized = false;
-        stop_initialize = false;
-        st2_state = ST2_IDLE;
-
-        if (!latest_next_step.empty())
-        {
-          // update_target_from_step(latest_next_step);
-          int row_ins = parse_int_from_json(latest_next_step, "row");
-          int col_ins = parse_int_from_json(latest_next_step, "col");
-          int height_ins = parse_int_from_json(latest_next_step, "height");
-          std::string dir_ins = parse_direction_from_json(latest_next_step);
-
-          if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
-          {
-            update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
-          }
-          goal_active = true;
-          has_wp = true;
-          wp_processing = false;
-        }
-
-        RCLCPP_INFO(this->get_logger(), "ROBOT SUDAH DI TENGAH GRID");
+        current_state = WAIT_LIFTER;
+        RCLCPP_WARN(this->get_logger(), "Proxy Depan Lock! Menaikkan Lifter Depan...");
       }
 
       break;
     }
+
+    // case WAIT_LIFTER:
+    // {
+    //   cmd.linear.x = 0.0;
+    //   cmd.linear.y = 0.0;
+    //   cmd.angular.z = 0.0;
+
+    //   RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
+
+    //   if (!wait_lifter_timer_init)
+    //   {
+    //     wait_lifter_start_time = this->now().seconds();
+    //     wait_lifter_timer_init = true;
+    //     RCLCPP_WARN(this->get_logger(), "WAIT_LIFTER: timer dimulai (timeout 5s)");
+    //   }
+
+    //   double wait_elapsed = this->now().seconds() - wait_lifter_start_time;
+    //   RCLCPP_INFO(this->get_logger(), "WAITING LIFTER (stage1) elapsed=%.1fs", wait_elapsed);
+
+    //   if (wait_elapsed > 5.0)
+    //   {
+    //     wait_lifter_timer_init = false;
+    //     RCLCPP_WARN(this->get_logger(), "Lifter Depan Selesai → Robot Maju untuk Roda Belakang");
+    //     current_state = AFTER_CLIMB;
+
+    //   }
+
+    //   break;
+    // }
+
+    // case AFTER_CLIMB:
+    // {
+    //   cmd.linear.x = 0.4;  
+    //   cmd.linear.y = 0.0;
+    //   // cmd.angular.z = 0.0;
+    //   cmd.angular.z = -controlled_angle;
+
+    //   RCLCPP_INFO(this->get_logger(), "Menunggu Bodi Belakang Rapat (Proxy Belakang)...");
+
+    //   if(proxy1_right)
+    //   {
+    //     cmd.linear.x = 0.0;
+    //     cmd.angular.z = 0.0;
+    //   }
+
+
+    //   stop_initialize = false;
+    //   current_state = STOP_SENSOR
+
+    //   break;
+    // }
+
+    // case STOP_SENSOR:
+    // {
+    //   cmd.linear.x = 0.0;
+    //   cmd.linear.y = 0.0;
+    //   cmd.angular.z = 0.0;
+    //   // cmd.angular.z = -controlled_angle;
+
+    //   RCLCPP_INFO(this->get_logger(), "STOP 1 sensor WAITING LIFTER");
+
+    //   if (!stop_initialize)
+    //   {
+    //     stop_time = this->now().seconds();
+    //     stop_initialize = true;
+    //   }
+
+    //   // if(!start_saved)
+    //   if (this->now().seconds() - stop_time > 2.0)
+    //   {
+    //     start_x_after_climb = currentX;
+    //     start_y_after_climb = currentY;
+
+    //     start_saved = true;
+
+    //     current_state = POST_CLIMB_MOVE;
+    //   }
+
+    //   break;
+    // }
+
+    // case POST_CLIMB_MOVE:
+    // {
+
+    //   double dx = currentX - start_x_after_climb;
+    //   double dy = currentY - start_y_after_climb;
+    //   double dist = sqrt(dx * dx + dy * dy);
+
+    //   if (dist < 0.2)
+    //   {
+    //     cmd.linear.x = 0.3;
+    //     cmd.linear.y = 0.0;
+    //     cmd.angular.z = 0.0;
+    //   }
+    //   else
+    //   {
+    //     cmd.linear.x = 0.0;
+    //     cmd.linear.y = 0.0;
+    //     cmd.angular.z = -controlled_angle;
+
+    //     double entry_raw_x = currentX - odom_offset_x;
+    //     double entry_raw_y = currentY - odom_offset_y;
+
+    //     odom_offset_x = 2.952 - entry_raw_x;
+    //     odom_offset_y = -1.438 - entry_raw_y;
+
+    //     RCLCPP_INFO(this->get_logger(),
+    //         "ENTRY STAGE2: currentX=%.3f currentY=%.3f heading=%.3f",
+    //         currentX, currentY, heading);
+
+
+    //     std_msgs::msg::Bool reachedClimb_msg;
+    //     reachedClimb_msg.data = true;
+    //     climb_done_pub->publish(reachedClimb_msg);
+
+    //     RCLCPP_INFO(this->get_logger(), "masuk stage 2");
+
+
+    //     current_state = STAGE2_MOVE_STEPbSTEP;
+
+    //     is_stage2 = true;
+    //     start_saved = false;
+    //     stage2_initiallized = false;
+    //     stop_initialize = false;
+    //     st2_state = ST2_IDLE;
+
+    //     if (!latest_next_step.empty())
+    //     {
+    //       // update_target_from_step(latest_next_step);
+    //       int row_ins = parse_int_from_json(latest_next_step, "row");
+    //       int col_ins = parse_int_from_json(latest_next_step, "col");
+    //       int height_ins = parse_int_from_json(latest_next_step, "height");
+    //       std::string dir_ins = parse_direction_from_json(latest_next_step);
+
+    //       if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
+    //       {
+    //         update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
+    //       }
+    //       goal_active = true;
+    //       has_wp = true;
+    //       wp_processing = false;
+    //     }
+
+    //     RCLCPP_INFO(this->get_logger(), "ROBOT SUDAH DI TENGAH GRID");
+    //   }
+
+    //   break;
+    // }
 
       // ================================================STAGE 2====================================================
 
@@ -1990,7 +2054,8 @@ private:
     case TARGET_REACHED:
       cmd.linear.x = 0.0;
       cmd.linear.y = 0.0;
-      cmd.angular.z = -controlled_angle;
+      cmd.angular.z = 0.0;
+      // cmd.angular.z = -controlled_angle;
 
       if (stage1_completed && !stage2_triggred)
       {
@@ -2041,14 +2106,17 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr solenoid_grip_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr allow_lifter_up_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_entry_pub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage3_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_sub;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr entry_point_sub;
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr checking_input_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr path_list_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr next_step_sub;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr stage2_exit_pub;
   rclcpp::Subscription<std_msgs::msg::UInt32>::SharedPtr ir_code_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
+  rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr bluePill_sub;
   // di bagian private class Movement
   nav_msgs::msg::Odometry odom_robot_msg;
 

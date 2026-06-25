@@ -2,6 +2,8 @@
 #include <std_msgs/msg/bool.hpp>
 #include <geometry_msgs/msg/point.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/int8.hpp>
 #include <cmath>
 
 class waypointPublish : public rclcpp::Node
@@ -21,14 +23,22 @@ public:
 
     lifter_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_control", 10);
 
+    lifter_grid_pub = this->create_publisher<std_msgs::msg::Int8>("lifter_grid_control", 10);
+
     limit_sub = this->create_subscription<std_msgs::msg::Bool>("limitSlideData", 10,
                                                                std::bind(&waypointPublish::limit_callback, this, std::placeholders::_1));
 
-    exit_pos_sub = this->create_subscription<geometry_msgs::msg::Point>("/stage2_exit_pos", 10,
-                                                                        std::bind(&waypointPublish::exit_pos_callback, this, std::placeholders::_1));
+    // exit_pos_sub = this->create_subscription<geometry_msgs::msg::Point>("/stage2_exit_pos", 10,
+    //                                                                     std::bind(&waypointPublish::exit_pos_callback, this, std::placeholders::_1));
 
     buttonStage2_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage2", 10,
                                                                       std::bind(&waypointPublish::buttonStage2_callback, this, std::placeholders::_1));
+
+    entry_sub = this->create_subscription<std_msgs::msg::String>("/meihua/entry_point", 10,
+                                                                    std::bind(&waypointPublish::entry_callback, this,std::placeholders::_1));
+
+    robot_up_sub = this->create_subscription<std_msgs::msg::Bool>("/robot_up_wp0", 10,
+                                                                  std::bind(&waypointPublish::robot_up_callback, this, std::placeholders::_1));
 
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
                                                                   [this](const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -44,10 +54,10 @@ public:
         // {0.2, 0.0}
         // {0.0, 1.0}
 
-        {0.0, 1.0},
-        {1.0, 1.0},
-        {1.0, -1.45},
-        {1.5, -1.45}};
+        {0.0, 1.1},
+        {1.0, 1.1},
+        {1.0, -1.42},
+        {1.5, -1.42}};
 
     current_waypoint_index = 0;
     waiting_ir = false;
@@ -63,6 +73,8 @@ private:
   {
     MOVING,
     WAIT_IR,
+    WAIT_LIFTER,
+    WAIT_STAGE2_LIFTER,
     COMPLETE
   };
 
@@ -127,7 +139,7 @@ private:
           lifter_msg.data = true;
           lifter_pub->publish(lifter_msg);
 
-          RCLCPP_INFO(this->get_logger(), "Lifter turun (setelah delay)");
+          RCLCPP_INFO(this->get_logger(), "robot naik (setelah delay)");
         });
   }
 
@@ -153,18 +165,59 @@ private:
     // WP0 action
     if (current_waypoint_index == 0)
     {
+
+      geometry_msgs::msg::Point stop_point;
+      stop_point.x = current_robot_x;
+      stop_point.y = current_robot_y;
+      stop_point.z = 0.0;
+      pose_pub->publish(stop_point);
+
+      waypoint[1].second = current_robot_y;
+
+      y_track_timer = this->create_wall_timer(std::chrono::milliseconds(100),[this]()
+      {
+        if(current_waypoint_index != 1){
+          y_track_timer->cancel();
+          return;
+        }
+
+        double dx = waypoint[1].first - current_robot_x;
+
+        if(dx > 0.1)
+        {
+          waypoint[1].second = current_robot_y;
+
+          geometry_msgs::msg::Point point;
+          point.x = waypoint[1].first;
+          point.y = waypoint[1].second;
+          point.z = 0.0;
+          pose_pub->publish(point);
+        }
+        else
+        {
+          y_track_timer->cancel();
+        }
+      });
+
+      RCLCPP_INFO(this->get_logger(), "WP1 di-snap ke Y robot: %.3f", current_robot_y);
+
+      // advance_waypoint();
+      // return;
+
       std_msgs::msg::Bool lifter_msg;
       lifter_msg.data = true;
       lifter_pub->publish(lifter_msg);
 
-      // RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
+      RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
 
       // RCLCPP_INFO(this->get_logger(), "WP0 reached → lanjut ke WP1, lifter turun dalam 1500ms...");
 
       // advance_waypoint();           // robot langsung jalan ke WP1
 
-      // trigger_lifter_delayed(1400); // lifter turun 1500ms kemudian (sambil robot jalan)
-      // return;
+      state = WP_STATE::WAIT_LIFTER;
+
+      // trigger_lifter_delayed(900); // lifter turun 1500ms kemudian (sambil robot jalan)
+      return;
     }
 
     // WP1 → WAIT IR
@@ -179,9 +232,33 @@ private:
 
     if (current_waypoint_index == 2)
     {
-      waypoint[3].second = current_robot_y;
-      RCLCPP_INFO(this->get_logger(), "WP3 di-snap ke Y robot: %.3f", current_robot_y);
-      advance_waypoint();
+      geometry_msgs::msg::Point stop_point;
+      stop_point.x = current_robot_x;
+      stop_point.y = current_robot_y;
+      stop_point.z = 0.0;
+      pose_pub->publish(stop_point);
+
+      waypoint[3].second = waypoint[2].second; 
+      RCLCPP_INFO(this->get_logger(), "WP3 dikunci ke target ideal Y: %.3f", waypoint[3].second);
+
+
+      // 2. Kirim perintah gerak posisi lifter langsung ke Teensy sesuai Grid GUI
+      std_msgs::msg::Int8 grid_msg;
+      grid_msg.data = selected_entry_col; // Mengirim angka 0, 1, atau 2
+      lifter_grid_pub->publish(grid_msg);
+      RCLCPP_INFO(this->get_logger(), "Mengirim Perintah Lifter Stage 2 ke Grid: %d", selected_entry_col);
+
+      state = WP_STATE::WAIT_STAGE2_LIFTER;
+
+      // 3. Berikan delay waktu aman (misal 3.5 detik) agar lifter selesai bergerak sebelum maju ke WP3
+      stage2_lifter_timer = this->create_wall_timer(
+          std::chrono::milliseconds(3500),
+          [this]()
+          {
+            stage2_lifter_timer->cancel(); // One-shot timer
+            RCLCPP_INFO(this->get_logger(), "Lifter Stage 2 Siap, Melanjutkan gerak ke Waypoint 3...");
+            advance_waypoint(); // Robot mulai maju menembus gerbang
+          });
       return;
     }
 
@@ -191,11 +268,10 @@ private:
 
   std::vector<std::pair<double, double>> retry_waypoints = {
       // {0.0, 0.0}, // WP0 — titik awal / sudut pertama
-      {1.0, 0.0}, // WP1 — maju
-      {1.0, 1.0}, // WP2 — belok kanan
-      {0.0, 1.0}, // WP3 — balik
-      {0.0, 0.0}  // WP4 — kembali ke titik awal (tutup segi empat)
-
+      {1.0, 0.0},  // WP1 — maju
+      {1.0, -1.0}, // WP2 — belok kanan
+      {0.0, -1.0}, // WP3 — balik
+      {0.0, 0.0}   // WP4 — kembali ke titik awal (tutup segi empat)
 
       // {1.0, 0.0},
       // {1.0, 1.0},
@@ -219,8 +295,8 @@ private:
     exit_pos_pushed = false;
     exit_pos_received = false;
 
-    retry_mode = true;                    // ← DITAMBAH
-    state = WP_STATE::MOVING;  
+    retry_mode = true; // ← DITAMBAH
+    state = WP_STATE::MOVING;
     waypoint = retry_waypoints;
     current_waypoint_index = 0;
 
@@ -246,54 +322,102 @@ private:
     limit_triggered = true;
     reached_latched = true;
 
-    RCLCPP_INFO(this->get_logger(), "LIMIT HIT WP0 → Anggap Reached + Lifter turun");
+    geometry_msgs::msg::Point stop_point;
+    stop_point.x = current_robot_x;
+    stop_point.y = current_robot_y;
+    stop_point.z = 0.0;
+    pose_pub->publish(stop_point);
 
-    // std_msgs::msg::Bool lifter_msg;
-    // lifter_msg.data = true;
-    // lifter_pub->publish(lifter_msg);
+    RCLCPP_INFO(this->get_logger(), "LIMIT HIT WP0 → Anggap Reached + robot naik");
 
     waypoint[1].second = current_robot_y;
+
+    y_track_timer = this->create_wall_timer(std::chrono::milliseconds(100), [this]()
+                                            {
+        if (current_waypoint_index != 1) {
+            y_track_timer->cancel();
+            return;
+        }
+
+        double dx = waypoint[1].first - current_robot_x;
+
+        if (dx > 0.1)
+        {
+            waypoint[1].second = current_robot_y;
+
+            geometry_msgs::msg::Point point;
+            point.x = waypoint[1].first;
+            point.y = waypoint[1].second;
+            point.z = 0.0;
+            pose_pub->publish(point);
+        }
+        else
+        {
+            y_track_timer->cancel();
+        } });
+
+
+
     RCLCPP_INFO(this->get_logger(), "WP1 di-snap ke Y robot: %.3f", current_robot_y);
 
-    advance_waypoint();
+    std_msgs::msg::Bool lifter_msg;
+    lifter_msg.data = true;
+    lifter_pub->publish(lifter_msg);
 
-    trigger_lifter_delayed(1400);
+    RCLCPP_INFO(this->get_logger(), "Trigger lifter turun, robot menunggu...");
+
+    state = WP_STATE::WAIT_LIFTER;
+
+    // advance_waypoint();
+
+    // trigger_lifter_delayed(900);
   }
 
-  void exit_pos_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  void robot_up_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    exit_x = msg->x;
-    exit_y = msg->y;
+    if (!msg->data)
+      return;
+    if (state != WP_STATE::WAIT_LIFTER)
+      return;
 
-    exit_pos_received = true;
-    stage2_done = true;
-    all_completed = false;
-    stage1_done = true;
-
-    reached_latched = false;
-    waiting_ir = false;
-    limit_triggered = false;
-
-    state = WP_STATE::MOVING;
-
-    waypoint.push_back({exit_x, exit_y + -1.1});
-    waypoint.push_back({exit_x + 2.0, exit_y + -1.0});
-
-    current_waypoint_index = waypoint.size() - 2;
-
-    // RCLCPP_INFO(this->get_logger(), "STAGE 3 WAYPOINTS: geser=(%.2f,%.2f) maju=(%.2f,%.2f)",
-    // exit_x, exit_y - 1.0, exit_x + 1.0, exit_y - 1.0);
-
-    RCLCPP_INFO(this->get_logger(),
-                "STAGE 3 WAYPOINTS: geser=(%.2f,%.2f) maju=(%.2f,%.2f)",
-                waypoint[waypoint.size() - 2].first,
-                waypoint[waypoint.size() - 2].second,
-                waypoint[waypoint.size() - 1].first,
-                waypoint[waypoint.size() - 1].second);
-
-    send_waypoint();
-    // RCLCPP_INFO(this->get_logger(), "EXIT POS RECEIVED: (%.2f, %.2f)", exit_x, exit_y);
+    RCLCPP_INFO(this->get_logger(), "LIFTER SUDAH DI POSISI → lanjut jalan");
+    advance_waypoint();
   }
+
+  // void exit_pos_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+  // {
+  //   exit_x = msg->x;
+  //   exit_y = msg->y;
+
+  //   exit_pos_received = true;
+  //   stage2_done = true;
+  //   all_completed = false;
+  //   stage1_done = true;
+
+  //   reached_latched = false;
+  //   waiting_ir = false;
+  //   limit_triggered = false;
+
+  //   state = WP_STATE::MOVING;
+
+  //   waypoint.push_back({exit_x, exit_y + -1.1});
+  //   waypoint.push_back({exit_x + 2.0, exit_y + -1.0});
+
+  //   current_waypoint_index = waypoint.size() - 2;
+
+  //   // RCLCPP_INFO(this->get_logger(), "STAGE 3 WAYPOINTS: geser=(%.2f,%.2f) maju=(%.2f,%.2f)",
+  //   // exit_x, exit_y - 1.0, exit_x + 1.0, exit_y - 1.0);
+
+  //   RCLCPP_INFO(this->get_logger(),
+  //               "STAGE 3 WAYPOINTS: geser=(%.2f,%.2f) maju=(%.2f,%.2f)",
+  //               waypoint[waypoint.size() - 2].first,
+  //               waypoint[waypoint.size() - 2].second,
+  //               waypoint[waypoint.size() - 1].first,
+  //               waypoint[waypoint.size() - 1].second);
+
+  //   send_waypoint();
+  //   // RCLCPP_INFO(this->get_logger(), "EXIT POS RECEIVED: (%.2f, %.2f)", exit_x, exit_y);
+  // }
 
   void ir_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
@@ -310,6 +434,30 @@ private:
     advance_waypoint();
   }
 
+  void entry_callback(const std_msgs::msg::String::SharedPtr msg)
+  {
+    if(current_waypoint_index > 3)
+      return;
+
+    RCLCPP_INFO(this->get_logger(), "Menerima target entry dari GUI: %s", msg->data.c_str());
+
+    // int col = 1;
+    if(msg->data.find("\"col\": 0") != std::string::npos)       selected_entry_col = 0;
+    else if (msg->data.find("\"col\": 1") != std::string::npos) selected_entry_col = 1;
+    else if (msg->data.find("\"col\": 2") != std::string::npos) selected_entry_col = 2;
+
+    // Sesuaikan nilai meter (-0.95, -1.45, -1.95) dengan jarak asli di lapangan Anda!
+    double target_y = -1.42;
+    if (selected_entry_col == 0)       target_y = -0.6;
+    else if (selected_entry_col == 1) target_y = -1.42;
+    else if (selected_entry_col == 2) target_y = -1.9;
+
+    waypoint[2].second = target_y;
+
+    RCLCPP_INFO(this->get_logger(), "WP2 diupdate ke Y: %.2f", target_y);
+
+  }
+
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pose_pub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ir_sub;
@@ -318,7 +466,15 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr limit_sub;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
   rclcpp::TimerBase::SharedPtr lifter_timer;
+  rclcpp::TimerBase::SharedPtr y_track_timer;
+  rclcpp::TimerBase::SharedPtr stage2_lifter_timer;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr robot_up_sub;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr entry_sub;
+  rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr lifter_grid_pub;
+
+
+  int selected_entry_col = 1;
 
   std::vector<std::pair<double, double>> waypoint;
 };

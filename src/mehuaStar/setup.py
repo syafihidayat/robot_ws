@@ -24,7 +24,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'mehua = mehuaStar.mehua:main'
+            'mehua = mehuaStar.mehua:main',
+            'mehua_red = mehuaStar.mehua_red:main',
+            'main = mehuaStar.main:main'
         ],
     },
 )

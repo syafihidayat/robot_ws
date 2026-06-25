@@ -183,6 +183,7 @@ class MeihuaRosNode:
             self.pub_path   = self.node.create_publisher(String, "/meihua/path_steps", 10)
             self.pub_next   = self.node.create_publisher(String, "/meihua/next_step",  10)
             self.pub_status = self.node.create_publisher(String, "/meihua/status",     10)
+            self.pub_entry  = self.node.create_publisher(String, "/meihua/entry_point", 10)
             qos_tl = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
             self.pub_robot_start  = self.node.create_publisher(Bool, "/robot_start",    qos_tl)
             self.pub_retry_stage2 = self.node.create_publisher(Bool, "/button_stage2",  10)
@@ -222,7 +223,11 @@ class MeihuaRosNode:
 
     def _cb_arrived(self, msg):
         if msg.data:
-            self.on_position(R2_ENTRY[0], R2_ENTRY[1], source="arrived")
+            cb = getattr(self, "on_arrived", None)
+            if cb:
+                cb()
+            else:
+                self.on_position(R2_ENTRY[0], R2_ENTRY[1], source="arrived")
             print("[ROS] R2 confirmed arrived at entry point via /meihua/r2_arrived")
 
     def _cb_wp_reached(self, msg):
@@ -245,7 +250,7 @@ class MeihuaRosNode:
         ]
         payload = json.dumps({
             "total_steps": len(steps),
-            "entry_point": list(R2_ENTRY),
+            "entry_point": list(self.r2_entry),
             "goal": list(goal) if goal else None,
             "steps": steps
         })
@@ -295,14 +300,15 @@ class MeihuaRosNode:
         self.pub_retry_stage3.publish(msg)
         print("retry stage 3")
 
-    # def _cb_kfs_detection(self, msg):
-    #     if not msg.detections:
-    #         return
-    #     det = max(msg.detections, key=lambda d: d.confidence)
-    #     # FIX: pakai getattr supaya aman walau callback belum di-set
-    #     cb = getattr(self, 'on_kfs_detection', None)
-    #     if cb:
-    #         cb(det)
+    def publish_entry_point(self, col):
+        if not(ros_ok and self._active and self.pub_entry):
+            return
+        
+        msg = String()
+
+        msg.data = json.dumps({"col" : col})
+        self.pub_entry.publish(msg)
+        print(f"[ROS] Target Entry Stage 2 dikirim: kolom {col}")
 
     def stop(self):
         self._active = False
@@ -317,14 +323,15 @@ class MeihuaApp:
         self.root = root
         print("1. Masuk __init__")
 
-        self.root.title(" Meihua Forest Planner — ABU Robocon 2026 + ROS2")
+        self.root.title(" Meihua Forest Planner")
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # State
         self.kfs_grid     = [["EMPTY"] * COLS for _ in range(ROWS)]
-        self.r2_start     = R2_ENTRY       # Fixed: selalu (0,1)
+        self.r2_entry     = R2_ENTRY           # Entry point dipilih dari UI
+        self.r2_start     = self.r2_entry
         self.r2_goal      = None
         self.path         = []
         self.path_step    = 0
@@ -335,6 +342,12 @@ class MeihuaApp:
         self.robot_pos    = None
         self.robot_status = STATUS_WAITING
         self.r2_at_entry  = False          # True ketika R2 sudah di (0,1)
+
+
+
+        self.ros_mode   = tk.StringVar(value="full_path")
+        self._spin_delay_val = 500
+        self._topic_val      = "/meihua/path_steps"
 
         # ROS2
         print("2. Membuat ROS object")
@@ -356,6 +369,9 @@ class MeihuaApp:
         self.ros.on_wp_reached_safe  = lambda: self.root.after(0, self._send_next_step)
         self.ros.on_kfs_detection    = lambda det: self._log(
             f"🔍 KFS detected: {det.label} conf={det.confidence:.2f}")
+        # Callback arrived — pakai entry dinamis dari app
+        self.ros.on_arrived = lambda: self.root.after(
+            0, lambda: self._on_robot_position(self.r2_entry[0], self.r2_entry[1], source="arrived"))
 
         # FIX: Pakai pola sama seperti gui_kfs.py — spin via root.after(), TANPA thread
         # Tidak ada race condition karena berjalan di dalam Tkinter event loop
@@ -369,8 +385,8 @@ class MeihuaApp:
 
         # Initial log
         self._log("🌸 Meihua Forest Planner siap!")
-        self._log(f"📍 Entry Point R2: grid {R2_ENTRY} → H:{GRID_HEIGHTS[R2_ENTRY[0]][R2_ENTRY[1]]}mm")
-        self._log(f"⏳ Menunggu R2 naik ke grid {R2_ENTRY}...")
+        self._log(f"📍 Entry Point R2: grid {self.r2_entry} → H:{GRID_HEIGHTS[self.r2_entry[0]][self.r2_entry[1]]}mm")
+        self._log(f"⏳ Menunggu R2 menuju grid {self.r2_entry}...")
         if USE_ROS:
             st = "🟢 ROS2 terhubung!" if self.ros_connected else "🔴 ROS2 gagal connect"
             self._log(st)
@@ -382,11 +398,11 @@ class MeihuaApp:
         # Header
         hdr = tk.Frame(self.root, bg=BG)
         hdr.pack(fill="x", pady=(8,3))
-        tk.Label(hdr, text="ABU ROBOCON 2026  ·  HONG KONG",
-                 bg=BG, fg=ACCENT, font=("Courier",8,"bold")).pack()
-        tk.Label(hdr, text="🌸  MEIHUA FOREST PLANNER  +  ROS2",
+        # tk.Label(hdr, text="ABU ROBOCON 2026",
+        #          bg=BG, fg=ACCENT, font=("Courier",8,"bold")).pack()
+        tk.Label(hdr, text="MEIHUA FOREST PLANNER (BLUE SIDE)",
                  bg=BG, fg="#60a5fa", font=("Courier",13,"bold")).pack()
-        tk.Label(hdr, text="A* Pathfinding  ·  R2 Autonomous Navigation  ·  ROS2 Path Publisher",
+        tk.Label(hdr, text=" ",
                  bg=BG, fg="#64748b", font=("Courier",9)).pack()
 
         # ── Status Bar ───────────────────────────────────────────────────
@@ -404,7 +420,7 @@ class MeihuaApp:
         self.lbl_robot_pos.pack(side="left", padx=8)
 
         self.lbl_entry_status = tk.Label(sb,
-            text=f"Entry {R2_ENTRY}: ✗ Belum",
+            text=f"Entry {self.r2_entry}: ✗ Belum",
             bg=PANEL_BG, fg="#f59e0b", font=("Courier",8))
         self.lbl_entry_status.pack(side="left", padx=8)
 
@@ -464,14 +480,40 @@ class MeihuaApp:
         ]:
             self._btn(sec, lbl, col, lambda t=tool: self._set_tool(t))
 
-        # R2 Entry fixed
-        sec2 = self._sec(parent, "🤖  R2 — ENTRY POINT (FIXED)")
-        tk.Label(sec2,
-                 text=f"  START: {R2_ENTRY}  H:{GRID_HEIGHTS[R2_ENTRY[0]][R2_ENTRY[1]]}mm",
-                 bg=PANEL_BG, fg="#a855f7", font=("Courier",9,"bold")).pack(anchor="w", padx=6, pady=2)
-        tk.Label(sec2,
-                 text="  R2 masuk Meihua dari titik ini",
-                 bg=PANEL_BG, fg="#64748b", font=("Courier",8)).pack(anchor="w", padx=6)
+        # R2 Entry — bisa pilih kolom
+        sec2 = self._sec(parent, "🤖  R2 — PILIH ENTRY POINT")
+
+        entry_row = tk.Frame(sec2, bg=PANEL_BG)
+        entry_row.pack(fill="x", padx=8, pady=(2,4))
+        self.entry_var = tk.IntVar(value=1)  # default kolom 1
+        self.entry_btns = {}
+        for col in [0, 1, 2]:
+            h = GRID_HEIGHTS[0][col]
+            btn = tk.Radiobutton(
+                entry_row,
+                text=f"[0,{col}]\n{h}mm",
+                variable=self.entry_var,
+                value=col,
+                command=self._on_entry_changed,
+                bg=PANEL_BG, fg="#a855f7",
+                selectcolor="#1e1a2e",
+                activebackground=PANEL_BG,
+                activeforeground="#a855f7",
+                font=("Courier", 8, "bold"),
+                indicatoron=0,
+                width=6, pady=4,
+                relief="flat", bd=1,
+                highlightbackground=BORDER,
+                highlightthickness=1,
+            )
+            btn.pack(side="left", padx=2, expand=True)
+            self.entry_btns[col] = btn
+
+        self.lbl_entry_selected = tk.Label(
+            sec2,
+            text=f"  Entry: [0,1]  H:{GRID_HEIGHTS[0][1]}mm",
+            bg=PANEL_BG, fg="#a855f7", font=("Courier",9,"bold"))
+        self.lbl_entry_selected.pack(anchor="w", padx=6, pady=(0,2))
 
         self._btn(sec2, "🎯  Set R2 Goal", "#06b6d4", lambda: self._set_mode("goal"))
         self.lbl_goal = tk.Label(sec2, text="Goal: —", bg=PANEL_BG, fg="#06b6d4",
@@ -482,38 +524,38 @@ class MeihuaApp:
         self._btn(sec2, "✅  [SIM] R2 Sudah di Entry", "#4ade80",
                   self._sim_r2_arrived, small=True)
 
-        # Robot Control (dari gui_kfs)
-        sec_ctrl = self._sec(parent, "🚀  ROBOT CONTROL")
-        self._btn(sec_ctrl, "▶  START",         "#4ade80", self._send_robot_start)
-        self._btn(sec_ctrl, "↺  RETRY STAGE 2", "#f59e0b", self._send_retry_stage2, small=True)
-        self._btn(sec_ctrl, "↺  RETRY STAGE 3", "#f59e0b", self._send_retry_stage3, small=True)
+        # # Robot Control (dari gui_kfs)
+        # sec_ctrl = self._sec(parent, "🚀  ROBOT CONTROL")
+        # self._btn(sec_ctrl, "▶  START",         "#4ade80", self._send_robot_start)
+        # self._btn(sec_ctrl, "↺  RETRY STAGE 2", "#f59e0b", self._send_retry_stage2, small=True)
+        # self._btn(sec_ctrl, "↺  RETRY STAGE 3", "#f59e0b", self._send_retry_stage3, small=True)
 
-        # Pathfinding
-        sec3 = self._sec(parent, "⚡  PATHFINDING & ROS2 SEND")
-        self._btn(sec3, "🔍  Run A* Algorithm",   "#10b981", self._run_astar)
-        self._btn(sec3, "📡  Send Full Path",      "#3b82f6", self._send_path_ros)
-        self._btn(sec3, "▶   Animate + Send",      "#a855f7", self._animate)
-        self._btn(sec3, "⏭   Next Step (Manual)",  "#06b6d4", self._send_next_step)
-        self._btn(sec3, "⏹   Stop",                "#f59e0b", self._stop)
-        self._btn(sec3, "🔄  Reset All",            "#ef4444", self._reset)
+        # # Pathfinding
+        # sec3 = self._sec(parent, "⚡  PATHFINDING & ROS2 SEND")
+        # # self._btn(sec3, "🔍  Run A* Algorithm",   "#10b981", self._run_astar)
+        # # self._btn(sec3, "▶   Animate + Send",      "#a855f7", self._animate)
+        # # self._btn(sec3, "🔄  Reset All",            "#ef4444", self._reset)
+        # self._btn(sec3, "📡  Send Full Path",      "#3b82f6", self._send_path_ros)
+        # self._btn(sec3, "⏭   Next Step (Manual)",  "#06b6d4", self._send_next_step)
+        # self._btn(sec3, "⏹   Stop",                "#f59e0b", self._stop)
 
-        # Mode indicator
+        # # Mode indicator
         self.lbl_mode = tk.Label(parent, text="MODE: PLACE KFS",
                                   bg=BG, fg=ACCENT, font=("Courier",9,"bold"))
         self.lbl_mode.pack(pady=5)
 
         # Height Legend
-        sec4 = self._sec(parent, "📊  HEIGHT LEGEND")
-        for h, hc in HEIGHT_COLOR.items():
-            row = tk.Frame(sec4, bg=PANEL_BG)
-            row.pack(fill="x", padx=10, pady=2)
-            tk.Canvas(row, width=14, height=14, bg=hc["bg"],
-                      highlightbackground=hc["border"],
-                      highlightthickness=2).pack(side="left", padx=(0,6))
-            tk.Label(row, text=f"{h}mm", bg=PANEL_BG, fg=hc["label"],
-                     font=("Courier",10)).pack(side="left")
-        tk.Label(sec4, text="  Max climb: ±200mm", bg=PANEL_BG, fg="#64748b",
-                 font=("Courier",8)).pack(anchor="w", padx=6, pady=(2,8))
+        # sec4 = self._sec(parent, "📊  HEIGHT LEGEND")
+        # for h, hc in HEIGHT_COLOR.items():
+        #     row = tk.Frame(sec4, bg=PANEL_BG)
+        #     row.pack(fill="x", padx=10, pady=2)
+        #     tk.Canvas(row, width=14, height=14, bg=hc["bg"],
+        #               highlightbackground=hc["border"],
+        #               highlightthickness=2).pack(side="left", padx=(0,6))
+        #     tk.Label(row, text=f"{h}mm", bg=PANEL_BG, fg=hc["label"],
+        #              font=("Courier",10)).pack(side="left")
+        # tk.Label(sec4, text="  Max climb: ±200mm", bg=PANEL_BG, fg="#64748b",
+        #          font=("Courier",8)).pack(anchor="w", padx=6, pady=(2,8))
 
     def _build_canvas(self, parent):
         self.lbl_hint = tk.Label(parent,
@@ -537,46 +579,63 @@ class MeihuaApp:
 
     def _build_right(self, parent):
         # ROS2 Config
-        sec_ros = self._sec(parent, "📡  ROS2 CONFIG", fg="#36393f")
+        # sec_ros = self._sec(parent, "📡  ROS2 CONFIG", fg="#36393f")
 
-        r1 = tk.Frame(sec_ros, bg=PANEL_BG)
-        r1.pack(fill="x", padx=8, pady=2)
-        tk.Label(r1, text="Topic:", bg=PANEL_BG, fg="#94a3b8",
-                 font=("Courier",8)).pack(side="left")
-        self.entry_topic = tk.Entry(r1, bg="#0d1117", fg="#60a5fa",
-                                    font=("Courier",9), bd=0,
-                                    insertbackground="#60a5fa", width=22)
-        self.entry_topic.insert(0, "/meihua/path_steps")
-        self.entry_topic.pack(side="left", padx=4)
+        # r1 = tk.Frame(sec_ros, bg=PANEL_BG)
+        # r1.pack(fill="x", padx=8, pady=2)
+        # tk.Label(r1, text="Topic:", bg=PANEL_BG, fg="#94a3b8",
+        #          font=("Courier",8)).pack(side="left")
+        # self.entry_topic = tk.Entry(r1, bg="#0d1117", fg="#60a5fa",
+        #                             font=("Courier",9), bd=0,
+        #                             insertbackground="#60a5fa", width=22)
+        # self.entry_topic.insert(0, "/meihua/path_steps")
+        # self.entry_topic.pack(side="left", padx=4)
 
-        r2 = tk.Frame(sec_ros, bg=PANEL_BG)
-        r2.pack(fill="x", padx=8, pady=2)
-        tk.Label(r2, text="Mode:", bg=PANEL_BG, fg="#94a3b8",
-                 font=("Courier",8)).pack(side="left")
-        self.ros_mode = tk.StringVar(value="full_path")
-        for val, lbl in [("full_path","Full Path"),("step_by_step","Step-by-Step")]:
-            tk.Radiobutton(r2, text=lbl, variable=self.ros_mode, value=val,
-                           bg=PANEL_BG, fg="#94a3b8", selectcolor="#1e3a2a",
-                           activebackground=PANEL_BG,
-                           font=("Courier",8)).pack(side="left", padx=4)
+        # r2 = tk.Frame(sec_ros, bg=PANEL_BG)
+        # r2.pack(fill="x", padx=8, pady=2)
+        # tk.Label(r2, text="Mode:", bg=PANEL_BG, fg="#94a3b8",
+        #          font=("Courier",8)).pack(side="left")
+        # self.ros_mode = tk.StringVar(value="full_path")
+        # for val, lbl in [("full_path","Full Path"),("step_by_step","Step-by-Step")]:
+        #     tk.Radiobutton(r2, text=lbl, variable=self.ros_mode, value=val,
+        #                    bg=PANEL_BG, fg="#94a3b8", selectcolor="#1e3a2a",
+        #                    activebackground=PANEL_BG,
+        #                    font=("Courier",8)).pack(side="left", padx=4)
 
-        r3 = tk.Frame(sec_ros, bg=PANEL_BG)
-        r3.pack(fill="x", padx=8, pady=(2,6))
-        tk.Label(r3, text="Step Delay(ms):", bg=PANEL_BG, fg="#94a3b8",
-                 font=("Courier",8)).pack(side="left")
-        self.spin_delay = tk.Spinbox(r3, from_=100, to=5000, increment=100,
-                                     width=6, bg="#0d1117", fg="#60a5fa",
-                                     font=("Courier",9), bd=0)
-        self.spin_delay.delete(0,"end"); self.spin_delay.insert(0,"500")
-        self.spin_delay.pack(side="left", padx=4)
+        # r3 = tk.Frame(sec_ros, bg=PANEL_BG)
+        # r3.pack(fill="x", padx=8, pady=(2,6))
+        # tk.Label(r3, text="Step Delay(ms):", bg=PANEL_BG, fg="#94a3b8",
+        #          font=("Courier",8)).pack(side="left")
+        # self.spin_delay = tk.Spinbox(r3, from_=100, to=5000, increment=100,
+        #                              width=6, bg="#0d1117", fg="#60a5fa",
+        #                              font=("Courier",9), bd=0)
+        # self.spin_delay.delete(0,"end"); self.spin_delay.insert(0,"500")
+        # self.spin_delay.pack(side="left", padx=4)
+
+
+        # Robot Control (dari gui_kfs)
+        sec_ctrl = self._sec(parent, "🚀  ROBOT CONTROL")
+        self._btn(sec_ctrl, "▶  START",         "#4ade80", self._send_robot_start)
+        self._btn(sec_ctrl, "↺  RETRY STAGE 2", "#f59e0b", self._send_retry_stage2, small=True)
+        self._btn(sec_ctrl, "↺  RETRY STAGE 3", "#f59e0b", self._send_retry_stage3, small=True)
 
         # JSON Preview
-        sec_json = self._sec(parent, "📋  PATH JSON → ROS2", fg="#3b82f6")
-        self.json_box = scrolledtext.ScrolledText(
-            sec_json, bg="#060d14", fg="#60a5fa",
-            font=("Courier",8), height=7, bd=0,
-            state="disabled", wrap="none")
-        self.json_box.pack(fill="x", padx=8, pady=(0,8))
+        # sec_json = self._sec(parent, "📋  PATH JSON → ROS2", fg="#3b82f6")
+        # self.json_box = scrolledtext.ScrolledText(
+        #     sec_json, bg="#060d14", fg="#60a5fa",
+        #     font=("Courier",8), height=7, bd=0,
+        #     state="disabled", wrap="none")
+        # self.json_box.pack(fill="x", padx=8, pady=(0,8))
+
+        # Pathfinding
+        sec3 = self._sec(parent, "⚡  PATHFINDING & ROS2 SEND")
+        self._btn(sec3, "🔍  Run A* Algorithm",   "#10b981", self._run_astar)
+        self._btn(sec3, "▶   Animate + Send",      "#a855f7", self._animate)
+        self._btn(sec3, "🔄  Reset All",            "#ef4444", self._reset)
+        # self._btn(sec3, "📡  Send Full Path",      "#3b82f6", self._send_path_ros)
+        # self._btn(sec3, "⏭   Next Step (Manual)",  "#06b6d4", self._send_next_step)
+        # self._btn(sec3, "⏹   Stop",                "#f59e0b", self._stop)
+
 
         # Event Log
         sec_log = self._sec(parent, "📋  EVENT LOG")
@@ -612,7 +671,7 @@ class MeihuaApp:
         p_idx    = next((i for i,p in enumerate(self.path) if p==(r,c)), -1)
         is_curr  = (self.animating and self.path and
                     self.path[min(self.path_step,len(self.path)-1)]==(r,c))
-        is_entry = (r,c) == R2_ENTRY
+        is_entry = (r,c) == self.r2_entry
         is_goal  = (r,c) == self.r2_goal
         in_path  = on_path and p_idx <= self.path_step
         is_rpos  = self.robot_pos == (r,c)
@@ -738,13 +797,13 @@ class MeihuaApp:
         self._log(f"📡 R2 posisi: [{r},{c}] via {source}")
 
         # Cek apakah sudah di entry point
-        if (r, c) == R2_ENTRY and not self.r2_at_entry:
+        if (r, c) == self.r2_entry and not self.r2_at_entry:
             self.r2_at_entry = True
             self._set_status(STATUS_READY)
             self.lbl_entry_status.config(
-                text=f"Entry {R2_ENTRY}: ✓ SIAP", fg="#4ade80")
-            self._log(f"✅ R2 di entry {R2_ENTRY}! Algoritma siap.")
-            self.ros.publish_status(STATUS_READY, f"R2 at {R2_ENTRY}")
+                text=f"Entry {self.r2_entry}: ✓ SIAP", fg="#4ade80")
+            self._log(f"✅ R2 di entry {self.r2_entry}! Algoritma siap.")
+            self.ros.publish_status(STATUS_READY, f"R2 at {self.r2_entry}")
             # Auto-run A* jika goal sudah diset
             if self.r2_goal:
                 self._log("🚀 Auto-run A* (goal sudah ada)...")
@@ -752,9 +811,28 @@ class MeihuaApp:
 
         self._draw_grid()
 
+    def _on_entry_changed(self):
+        col = self.entry_var.get()
+        self.r2_entry = (0, col)
+        self.r2_start = self.r2_entry
+        h = GRID_HEIGHTS[0][col]
+        self.lbl_entry_selected.config(text=f"  Entry: [0,{col}]  H:{h}mm")
+        self.r2_at_entry  = False
+        self.path = []
+        self.path_step = 0
+        self.lbl_entry_status.config(
+            text=f"Entry [0,{col}]: ✗ Belum", fg="#f59e0b")
+        self._set_status(STATUS_WAITING)
+        self._log(f"📍 Entry point diubah → [0,{col}] H:{h}mm")
+        self._draw_grid()
+
+
+        if self.ros_connected:
+            self.ros.publish_entry_point(col)
+
     def _sim_r2_arrived(self):
         """Simulasi: tekan ini jika tidak ada robot fisik."""
-        self._on_robot_position(R2_ENTRY[0], R2_ENTRY[1], source="SIMULATION")
+        self._on_robot_position(self.r2_entry[0], self.r2_entry[1], source="SIMULATION")
 
     def _set_status(self, status, extra=""):
         self.robot_status = status
@@ -769,7 +847,7 @@ class MeihuaApp:
             return
         if not self.r2_at_entry:
             messagebox.showwarning("⏳ Menunggu R2",
-                f"R2 belum ada di entry point {R2_ENTRY}!\n\n"
+                f"R2 belum ada di entry point {self.r2_entry}!\n\n"
                 "Tekan [SIM] R2 Sudah di Entry untuk simulasi,\n"
                 "atau tunggu sinyal dari robot via:\n"
                 "  ros2 topic pub /meihua/r2_arrived std_msgs/String '{}'")
@@ -785,7 +863,7 @@ class MeihuaApp:
             self._set_status(STATUS_RUNNING)
             self._log(f"✅ A* selesai! {len(result)} langkah")
             self._update_path_box()
-            self._update_json_preview()
+            # self._update_json_preview()
             self._update_path_info()
             self._log("📡 Auto-kirim step pertama ke robot...")
             self.root.after(200, self._send_next_step)
@@ -809,7 +887,7 @@ class MeihuaApp:
             messagebox.showwarning("⏳", "R2 belum di entry point!")
             return
         self.ros.publish_path(self.path, self.r2_goal)
-        self._log(f"📡 Full path dikirim → {self.entry_topic.get()}")
+        self._log(f"📡 Full path dikirim → /meihua/path_steps")
         self._log(f"   {len(self.path)} steps, mode: {self.ros_mode.get()}")
         if not ros_ok:
             self._log("   (ROS2 OFF — lihat JSON Preview)")
@@ -917,7 +995,7 @@ class MeihuaApp:
 
         if self.path_step < len(self.path)-1:
             self.path_step += 1
-            delay = int(self.spin_delay.get() or 500)
+            delay = self._spin_delay_val
             self.root.after(delay, self._anim_step)
         else:
             self.animating = False
@@ -930,6 +1008,7 @@ class MeihuaApp:
 
     def _reset(self):
         self.kfs_grid     = [["EMPTY"] * COLS for _ in range(ROWS)]
+        self.r2_start     = self.r2_entry    # ikut entry yang dipilih user
         self.r2_goal      = None
         self.path         = []
         self.path_step    = 0
@@ -941,12 +1020,12 @@ class MeihuaApp:
         self.lbl_path_info.config(text="")
         self.lbl_robot_pos.config(text="R2 Pos: —")
         self.lbl_entry_status.config(
-            text=f"Entry {R2_ENTRY}: ✗ Belum", fg="#f59e0b")
+            text=f"Entry {self.r2_entry}: ✗ Belum", fg="#f59e0b")
         self._set_mode("place")
         self._draw_grid()
         self._log("🔄 Reset selesai")
         self._update_path_box()
-        self._update_json_preview()
+        # self._update_json_preview()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _log(self, msg):
@@ -981,7 +1060,7 @@ class MeihuaApp:
             ]
             payload = {
                 "total_steps": len(steps),
-                "entry_point": list(R2_ENTRY),
+                "entry_point": list(self.r2_entry),
                 "goal": list(self.r2_goal) if self.r2_goal else None,
                 "steps": steps
             }

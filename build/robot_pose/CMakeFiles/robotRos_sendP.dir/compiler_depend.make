@@ -715,8 +715,28 @@ CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o: /home/syafihidayat/Docum
   /opt/ros/humble/include/geometry_msgs/geometry_msgs/msg/detail/twist__traits.hpp \
   /opt/ros/humble/include/geometry_msgs/geometry_msgs/msg/detail/vector3__traits.hpp \
   /opt/ros/humble/include/nav_msgs/nav_msgs/msg/detail/odometry__type_support.hpp \
-  /opt/ros/humble/include/nav_msgs/nav_msgs/msg/rosidl_generator_cpp__visibility_control.hpp
+  /opt/ros/humble/include/nav_msgs/nav_msgs/msg/rosidl_generator_cpp__visibility_control.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/string.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__struct.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__builder.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__traits.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__type_support.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/int8.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__struct.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__builder.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__traits.hpp \
+  /opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__type_support.hpp
 
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__type_support.hpp:
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/int8.hpp:
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__type_support.hpp:
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__traits.hpp:
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__struct.hpp:
 
 /opt/ros/humble/include/nav_msgs/nav_msgs/msg/rosidl_generator_cpp__visibility_control.hpp:
 
@@ -1034,6 +1054,8 @@ CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o: /home/syafihidayat/Docum
 
 /usr/include/c++/11/functional:
 
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__traits.hpp:
+
 /usr/include/asm-generic/errno-base.h:
 
 /opt/ros/humble/include/rmw/rmw/subscription_options.h:
@@ -1260,6 +1282,8 @@ CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o: /home/syafihidayat/Docum
 
 /usr/include/x86_64-linux-gnu/c++/11/bits/c++locale.h:
 
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/string__builder.hpp:
+
 /opt/ros/humble/include/statistics_msgs/statistics_msgs/msg/metrics_message.hpp:
 
 /opt/ros/humble/include/rclcpp/rclcpp/detail/rmw_implementation_specific_publisher_payload.hpp:
@@ -1335,6 +1359,8 @@ CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o: /home/syafihidayat/Docum
 /usr/include/c++/11/bits/ios_base.h:
 
 /opt/ros/humble/include/rmw/rmw/message_sequence.h:
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__builder.hpp:
 
 /opt/ros/humble/include/rclcpp/rclcpp/topic_statistics/subscription_topic_statistics.hpp:
 
@@ -1606,6 +1632,8 @@ CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o: /home/syafihidayat/Docum
 
 /opt/ros/humble/include/builtin_interfaces/builtin_interfaces/msg/detail/time__traits.hpp:
 
+/opt/ros/humble/include/std_msgs/std_msgs/msg/detail/int8__struct.hpp:
+
 /usr/include/c++/11/bits/cxxabi_init_exception.h:
 
 /usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
@@ -1729,6 +1757,8 @@ CMakeFiles/robotRos_sendP.dir/src/robotRos_sendP.cpp.o: /home/syafihidayat/Docum
 /opt/ros/humble/include/rmw/rmw/visibility_control.h:
 
 /opt/ros/humble/include/rmw/rmw/macros.h:
+
+/opt/ros/humble/include/std_msgs/std_msgs/msg/string.hpp:
 
 /opt/ros/humble/include/libstatistics_collector/libstatistics_collector/moving_average_statistics/moving_average.hpp:
 
