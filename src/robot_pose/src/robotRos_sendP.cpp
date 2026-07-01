@@ -55,9 +55,9 @@ public:
         // {0.0, 1.0}
 
         {0.0, 1.1},
-        {1.0, 1.1},
-        {1.0, -1.42},
-        {1.5, -1.42}};
+        {1.1, 1.1},
+        {1.1, -1.15},
+        {1.5, -1.15}};
 
     current_waypoint_index = 0;
     waiting_ir = false;
@@ -93,6 +93,8 @@ private:
   bool retry_mode = false;
 
   size_t current_waypoint_index;
+
+  static constexpr int IR_TIMEOUT_MS = 5000;
 
   // ===================== SEND WAYPOINT =====================
   void send_waypoint()
@@ -227,6 +229,16 @@ private:
       waiting_ir = true;
 
       RCLCPP_INFO(this->get_logger(), "WAITING IR...");
+
+      ir_timeout_timer = this->create_wall_timer(                 // ← BARU
+      std::chrono::milliseconds(IR_TIMEOUT_MS),
+      [this]()
+      {
+        ir_timeout_timer->cancel();
+        if (state != WP_STATE::WAIT_IR) return;
+        RCLCPP_WARN(this->get_logger(), "IR TIMEOUT...");
+        advance_waypoint();
+      });
       return;
     }
 
@@ -429,6 +441,9 @@ private:
     if (state != WP_STATE::WAIT_IR)
       return;
 
+    if (ir_timeout_timer) ir_timeout_timer->cancel();   // ← BARU
+
+
     RCLCPP_INFO(this->get_logger(), "IR RECEIVED → CONTINUE");
 
     advance_waypoint();
@@ -447,10 +462,10 @@ private:
     else if (msg->data.find("\"col\": 2") != std::string::npos) selected_entry_col = 2;
 
     // Sesuaikan nilai meter (-0.95, -1.45, -1.95) dengan jarak asli di lapangan Anda!
-    double target_y = -1.42;
-    if (selected_entry_col == 0)       target_y = -0.6;
-    else if (selected_entry_col == 1) target_y = -1.42;
-    else if (selected_entry_col == 2) target_y = -1.9;
+    double target_y = -1.15;
+    if (selected_entry_col == 0)       target_y = -0.5;
+    else if (selected_entry_col == 1) target_y = -1.15;
+    else if (selected_entry_col == 2) target_y = -1.5;
 
     waypoint[2].second = target_y;
 
@@ -468,6 +483,7 @@ private:
   rclcpp::TimerBase::SharedPtr lifter_timer;
   rclcpp::TimerBase::SharedPtr y_track_timer;
   rclcpp::TimerBase::SharedPtr stage2_lifter_timer;
+  rclcpp::TimerBase::SharedPtr ir_timeout_timer;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr robot_up_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr entry_sub;

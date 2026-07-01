@@ -98,10 +98,8 @@ public:
     checking_input_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>("/checking_input", 10,
                                                                                      std::bind(&Movement::checking_input_callback, this, std::placeholders::_1));
 
-
     buttonStage2_sub = this->create_subscription<std_msgs::msg::Bool>("/button_stage2", 10,
                                                                       std::bind(&Movement::buttonStage2_callback, this, std::placeholders::_1));
-
 
     // entry_point_sub = this->create_subscription<std_msgs::msg::String>("/meihua/entry_point", 10,
     //                                                                   std::bind(&Movement::entryPoint_callback, this, std::placeholders::_1));
@@ -110,15 +108,31 @@ public:
 
     stage2_exit_pub = this->create_publisher<geometry_msgs::msg::Point>("/stage2_exit_pos", 10);
 
-    solenoid_grip_pub = this->create_publisher<std_msgs::msg::Bool>("/solenoid_grip", 10);  // ← BARU
+    solenoid_grip_pub = this->create_publisher<std_msgs::msg::Bool>("/solenoid_grip", 10); // ← BARU
 
     bluePill_sub = this->create_subscription<std_msgs::msg::UInt8MultiArray>("bluePill_data", 10,
-      std::bind(&Movement::bluepill_callback, this, std::placeholders::_1));
+                                                                             std::bind(&Movement::bluepill_callback, this, std::placeholders::_1));
 
+    lifter_front_entry_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_entry_stage2", 10);
+    lifter_behind_entry_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_behind_stage2", 10);
 
-    lifter_entry_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_entry_stage2", 10);
-       
-    
+    lifter_front_done_sub = this->create_subscription<std_msgs::msg::Bool>("lifter_front_done", 10,
+                                                                           [this](const std_msgs::msg::Bool::SharedPtr msg)
+                                                                           {
+                                                                             if (msg->data)
+                                                                               this->is_front_lifter_done = true;
+                                                                           });
+
+    lifter_behind_done_sub = this->create_subscription<std_msgs::msg::Bool>("lifter_behind_done", 10,
+                                                                            [this](const std_msgs::msg::Bool::SharedPtr msg)
+                                                                            {
+                                                                              if (msg->data)
+                                                                                this->is_behind_lifter_done = true;
+                                                                            });
+
+    lifter_front_down_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_front_down", 10);
+
+    lifter_behind_down_pub = this->create_publisher<std_msgs::msg::Bool>("lifter_behind_down", 10);
 
     // tambah subscriber
     ir_code_sub = this->create_subscription<std_msgs::msg::UInt32>("ir_raw_code", 10,
@@ -159,9 +173,11 @@ public:
 
     this->declare_parameter("desired_linear_vel", 3.0);
     this->declare_parameter("max_angular_vel", 3.0);
+    this->declare_parameter("max_linear_vel_stage1_y", 0.8);
 
     this->get_parameter("desired_linear_vel", desired_linear_vel);
     this->get_parameter("max_angular_vel", max_angular_vel);
+    this->get_parameter("max_linear_vel_stage1_y", max_linear_vel_stage1_y);
 
     omni_distance.setBaseParam(kp, ki, kd);
     omni_angular.setHeadingParam(kpT, kiT, kdT);
@@ -183,6 +199,8 @@ private:
     STAGE2_MOVE_STEPbSTEP,
     MOVING_TO_TARGET_STAGE3,
     WAIT_LIFTER,
+    PUSH_TO_STAGE2,
+    WAIT_LIFTER_BEHIND
   };
 
   // enum Stage2state
@@ -215,9 +233,10 @@ private:
   };
 
   float desired_linear_vel, max_angular_vel;
+  float max_linear_vel_stage1_y = 0.8;
 
   int stage1_target_count = 0;
-  
+
   const int STAGE1_TARGETS_NORMAL = 3;
   const int STAGE2_TARGETS_RETRY = 4;
 
@@ -243,6 +262,7 @@ private:
   State current_state;
   double prevT;
   bool ignore_obstacle = false;
+
   bool target_reached_flag = false;
   bool paused = false;
   // bool just_resumed = false;
@@ -336,15 +356,17 @@ private:
   bool wait_lifter_timer_init = false;
   bool wait_lifter_st2_timer_init = false;
 
-  double grip_delay_ms = 1500.0;    // ← sesuaikan waktu tunggu solenoid (ms)
+  double grip_delay_ms = 1500.0; // ← sesuaikan waktu tunggu solenoid (ms)
   double grip_delay_start_time = 0.0;
-  bool   grip_delay_timer_init = false;
+  bool grip_delay_timer_init = false;
 
-
-  bool proxy1_left = false;
-  bool proxy1_right = false;
+  bool proxy1_left = true;
+  bool proxy1_right = true;
   bool proxy2_left = false;
   bool proxy2_right = true;
+
+  bool is_front_lifter_done = false;
+  bool is_behind_lifter_done = false;
 
   // ── Fall detection saat naik (ST2_STRAIGHT_CLIMB) ────────────────────────
 
@@ -457,7 +479,7 @@ private:
   }
 
   double tof_distance = 0;
-#define TOF_THRESHOLD 100
+#define TOF_THRESHOLD 74
 
   void tof_callback(const std_msgs::msg::UInt16::SharedPtr msg)
   {
@@ -474,16 +496,23 @@ private:
       tof_send_pub->publish(send_back_msg);
     }
 
-    if (distance > 0 && distance < TOF_THRESHOLD && !ignore_obstacle)
+    if ((distance >= TOF_THRESHOLD || distance == 0) && !lifter_down2_flag)
     {
-      if (current_state == MOVING_TO_TARGET)
-      {
-        previous_state_before_pause = current_state;
-        current_state = PAUSED_STAGE1;
-
-        RCLCPP_INFO(this->get_logger(), "stage 1 PAUSED by Tof");
-      }
+      ignore_obstacle = false; // ← obstacle sudah lewat, aktifkan tof lagi
+      tof_valid = false;
+      tof_distance = 0;
     }
+
+    // if (distance > 0 && distance < TOF_THRESHOLD && !ignore_obstacle)
+    // {
+    //   if (current_state == MOVING_TO_TARGET && !lifter_down2_flag)
+    //   {
+    //     previous_state_before_pause = current_state;
+    //     current_state = PAUSED_STAGE1;
+
+    //     RCLCPP_INFO(this->get_logger(), "stage 1 PAUSED by Tof");
+    //   }
+    // }
   }
 
   void infra_callback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -518,12 +547,12 @@ private:
     }
   }
 
-
   bool retry_mode = false;
 
   void buttonStage2_callback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if (!msg->data) return;
+    if (!msg->data)
+      return;
 
     RCLCPP_INFO(this->get_logger(), "RETRY STAGE 2 → Reset state node ke WAITING_FOR_TARGET");
 
@@ -533,19 +562,18 @@ private:
     stage1_targets_total = STAGE2_TARGETS_RETRY;
 
     // Reset semua state agar pose_callback tidak diblokir
-    current_state     = WAITING_FOR_TARGET;
-    st2_state         = ST2_IDLE;
-    is_stage2         = false;
-    target_received   = false;
+    current_state = WAITING_FOR_TARGET;
+    st2_state = ST2_IDLE;
+    is_stage2 = false;
+    target_received = false;
     target_reached_flag = false;
-    climb_finished    = false;
-    wp_processing     = false;
-    has_wp            = false;
-    goal_active       = false;   // kalau ada
-    limit_triggered   = false;
-    stage2_triggred   = false;
+    climb_finished = false;
+    wp_processing = false;
+    has_wp = false;
+    goal_active = false; // kalau ada
+    limit_triggered = false;
+    stage2_triggred = false;
     stage2_entry_locked = false;
-    
   }
 
   bool lifter_down2_flag = false;
@@ -555,7 +583,9 @@ private:
     if (msg->data)
     {
       lifter_down2_flag = true;
-      ignore_obstacle = true;
+      ignore_obstacle = false;
+      // ignore_obstacle = true;
+
       RCLCPP_INFO(this->get_logger(), "LIFTER DOWN 2 DETECTED");
     }
   }
@@ -580,8 +610,6 @@ private:
 
   void waypoint_backend_callback(const geometry_msgs::msg::Point::SharedPtr msg)
   {
-
-
   }
 
   bool limit_active = false;
@@ -679,9 +707,9 @@ private:
           return;
         }
 
-        if(!need_reverse)
+        if (!need_reverse)
         {
-           // mode naik: solenoid harus aktif dulu sebelum lifter naik
+          // mode naik: solenoid harus aktif dulu sebelum lifter naik
           grip_delay_timer_init = false;
           st2_state = ST2_GRIP_DELAY;
           RCLCPP_INFO(this->get_logger(), "wait_lifter (naik) -> ST2_GRIP_DELAY (solenoid dulu)");
@@ -691,7 +719,6 @@ private:
           st2_state = ST2_WAIT_LIFTER;
           RCLCPP_INFO(this->get_logger(), "PROXY → ST2_WAIT_LIFTER (mundur)");
         }
-
 
         // RCLCPP_WARN(this->get_logger(), "wait_lifter ignored, state=%d need_reverse=%d", (int)st2_state, need_reverse);
         // return;
@@ -853,7 +880,6 @@ private:
     targetY_world = (GRID_ORIGIN_Y + (target_col * CELL_SIZE));
     targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
 
-
     // targetY_world = -(GRID_ORIGIN_Y + (target_col * CELL_SIZE));
     // targetX_world = GRID_ORIGIN_X + (target_row * CELL_SIZE);
 
@@ -913,7 +939,6 @@ private:
   // {
   //   int col = parse_int_from_json(msg->data, "col");
 
-
   //   if(col != -1)
   //   {
   //     current_grid_col = col;
@@ -925,11 +950,11 @@ private:
   {
     if (msg->data.size() >= 8)
     {
-        // Ambil data sesuai urutan index dari Teensy
-        proxy1_left  = msg->data[4]; 
-        proxy1_right = msg->data[5];
-        proxy2_left  = msg->data[6];
-        proxy2_right = msg->data[7];
+      // Ambil data sesuai urutan index dari Teensy
+      proxy1_left = msg->data[4];
+      proxy1_right = msg->data[5];
+      proxy2_left = msg->data[6];
+      proxy2_right = msg->data[7];
     }
   }
 
@@ -957,7 +982,7 @@ private:
         std_msgs::msg::Bool sol_on;
         sol_on.data = true;
         solenoid_grip_pub->publish(sol_on);
-        grip_delay_timer_init = false;   // reset timer untuk millis solenoid
+        grip_delay_timer_init = false; // reset timer untuk millis solenoid
         RCLCPP_INFO(this->get_logger(), "LIFTER BAWAH -> solenoid ON, mulai millis");
       }
       // descend_lifter_up_received = true;
@@ -1005,9 +1030,22 @@ private:
       return;
     }
 
+    // ===== KONSUMSI SINYAL lifter_down2 DI SINI, TERPUSAT, GAK GANTUNG STATE/OBSTACLE =====
+    if (lifter_down2_flag)
+    {
+      lifter_down2_flag = false;
+      ignore_obstacle = true;
+      ignore_obstacle_since = this->now();
+      RCLCPP_INFO(this->get_logger(), "Lifter down2 received -> ignore_obstacle ON");
+    }
+
+    if (ignore_obstacle && (this->now() - ignore_obstacle_since).seconds() > 1.3)
+    {
+      ignore_obstacle = false; // auto-reset, gak gantung ke TOF harus "bersih" dulu
+    }
+
     switch (current_state)
     {
-
     // ================================================STAGE 1==========================================================
     case WAITING_FOR_TARGET:
       cmd.linear.x = 0.0;
@@ -1025,13 +1063,14 @@ private:
     case MOVING_TO_TARGET:
     {
 
-      if ((tof_valid && distance < TOF_THRESHOLD || sensor_obstacle || obstacle_lock) && !ignore_obstacle)
+      if ((tof_valid && tof_distance < TOF_THRESHOLD || sensor_obstacle || obstacle_lock) && !ignore_obstacle)
       {
         RCLCPP_INFO(this->get_logger(), " Stage 1: BLOCKED by obstacle");
+        previous_state_before_pause = current_state;
+        current_state = PAUSED_STAGE1;
         cmd.linear.x = 0.0;
         cmd.linear.y = 0.0;
         cmd.angular.z = 0.0;
-
         break;
       }
 
@@ -1049,9 +1088,12 @@ private:
       if (fabs(dx) > tol_x || fabs(dy) > tol_y)
       {
 
-        cmd.linear.x = 0.2 * std::cos(angle);
+        float clamped_speed_y = std::clamp(controlled_distance, -max_linear_vel_stage1_y, max_linear_vel_stage1_y);
+
+        cmd.linear.x = 0.17 * std::cos(angle);
         // cmd.linear.x = controlled_distance * std::cos(angle);
-        cmd.linear.y = controlled_distance * std::sin(angle);
+        // cmd.linear.y = controlled_distance * std::sin(angle);
+        cmd.linear.y = clamped_speed_y * std::sin(angle);
         cmd.angular.z = -controlled_angle;
         //  cmd.angular.z = 0.0;
         RCLCPP_INFO(this->get_logger(), "move robot");
@@ -1098,7 +1140,7 @@ private:
             {
               current_state = TARGET_REACHED;
 
-              if(retry_mode)
+              if (retry_mode)
               {
                 retry_mode = false;
                 stage1_targets_total = STAGE1_TARGETS_NORMAL;
@@ -1136,13 +1178,12 @@ private:
 
       bool obstacle_cleared = !((tof_valid && distance < TOF_THRESHOLD) || sensor_obstacle || obstacle_lock);
 
-      // if (lifter_down2_flag && obstacle_cleared)
-      if (!obstacle_cleared && lifter_down2_flag)
-      // if (!obstacle_cleared || lifter_down2_flag)
+      // ignore_obstacle sudah di-set true di blok terpusat (atas, sebelum switch)
+      // begitu lifter_down2 diterima, jadi resume cukup cek ignore_obstacle.
+      if (ignore_obstacle)
       {
 
         paused = false;
-        lifter_down2_flag = false;
 
         // just_resumed = true;
 
@@ -1167,20 +1208,22 @@ private:
     case STRAIGHT_FOR_CLIMB:
     {
       cmd.linear.x = 0.4;
-      cmd.linear.y = 0.0; 
+      cmd.linear.y = 0.0;
       // cmd.angular.z = 0.0;
       cmd.angular.z = -controlled_angle;
 
       RCLCPP_INFO(this->get_logger(), "Mencari Dinding Stage 2 (Menunggu Proxy Depan)...");
 
-      if(!proxy2_right)
+      if (!proxy2_right)
       {
         cmd.linear.x = 0.0;
         cmd.angular.z = 0.0;
 
+        // is_front_lifter_done = false;
+
         std_msgs::msg::Bool lifter_msg;
         lifter_msg.data = true;
-        lifter_entry_pub->publish(lifter_msg);
+        lifter_front_entry_pub->publish(lifter_msg);
 
         wait_lifter_timer_init = false;
 
@@ -1191,153 +1234,198 @@ private:
       break;
     }
 
-    // case WAIT_LIFTER:
-    // {
-    //   cmd.linear.x = 0.0;
-    //   cmd.linear.y = 0.0;
-    //   cmd.angular.z = 0.0;
+    case WAIT_LIFTER:
+    {
+      cmd.linear.x = 0.0;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = 0.0;
 
-    //   RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
+      RCLCPP_INFO(this->get_logger(), "WAITING LIFTER");
 
-    //   if (!wait_lifter_timer_init)
-    //   {
-    //     wait_lifter_start_time = this->now().seconds();
-    //     wait_lifter_timer_init = true;
-    //     RCLCPP_WARN(this->get_logger(), "WAIT_LIFTER: timer dimulai (timeout 5s)");
-    //   }
+      if (this->is_front_lifter_done == true)
+      {
+        RCLCPP_INFO(this->get_logger(), "Lifter Depan DONE! Sekarang pindah ke state mendorong...");
 
-    //   double wait_elapsed = this->now().seconds() - wait_lifter_start_time;
-    //   RCLCPP_INFO(this->get_logger(), "WAITING LIFTER (stage1) elapsed=%.1fs", wait_elapsed);
+        this->is_front_lifter_done = false;
 
-    //   if (wait_elapsed > 5.0)
-    //   {
-    //     wait_lifter_timer_init = false;
-    //     RCLCPP_WARN(this->get_logger(), "Lifter Depan Selesai → Robot Maju untuk Roda Belakang");
-    //     current_state = AFTER_CLIMB;
+        // std_msgs::msg::Bool lifter_msg;
+        // lifter_msg.data = false;
+        // lifter_front_entry_pub->publish(lifter_msg);
 
-    //   }
+        current_state = PUSH_TO_STAGE2;
+      }
+      break;
+    }
 
-    //   break;
-    // }
+    case PUSH_TO_STAGE2:
+    {
+      cmd.linear.x = 0.2;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = -controlled_angle;
 
-    // case AFTER_CLIMB:
-    // {
-    //   cmd.linear.x = 0.4;  
-    //   cmd.linear.y = 0.0;
-    //   // cmd.angular.z = 0.0;
-    //   cmd.angular.z = -controlled_angle;
+      RCLCPP_INFO(this->get_logger(), "Lifter Depan Siap. Roda Maju & Memicu Lifter Belakang Naik...");
 
-    //   RCLCPP_INFO(this->get_logger(), "Menunggu Bodi Belakang Rapat (Proxy Belakang)...");
+      if (!proxy1_right)
+      {
+        cmd.linear.x = 0.0;
+        cmd.angular.z = 0.0;
 
-    //   if(proxy1_right)
-    //   {
-    //     cmd.linear.x = 0.0;
-    //     cmd.angular.z = 0.0;
-    //   }
+        is_behind_lifter_done = false;
 
+        std_msgs::msg::Bool lifter_behind_msg;
+        lifter_behind_msg.data = true;
+        lifter_behind_entry_pub->publish(lifter_behind_msg);
 
-    //   stop_initialize = false;
-    //   current_state = STOP_SENSOR
+        RCLCPP_INFO(this->get_logger(), "Lifter Belakang Naik...");
 
-    //   break;
-    // }
+        current_state = WAIT_LIFTER_BEHIND;
+      }
+      break;
+    }
 
-    // case STOP_SENSOR:
-    // {
-    //   cmd.linear.x = 0.0;
-    //   cmd.linear.y = 0.0;
-    //   cmd.angular.z = 0.0;
-    //   // cmd.angular.z = -controlled_angle;
+    case WAIT_LIFTER_BEHIND:
+    {
 
-    //   RCLCPP_INFO(this->get_logger(), "STOP 1 sensor WAITING LIFTER");
+      cmd.linear.x = 0.0;
+      cmd.linear.y = 0.0;
+      cmd.angular.z = 0.0;
 
-    //   if (!stop_initialize)
-    //   {
-    //     stop_time = this->now().seconds();
-    //     stop_initialize = true;
-    //   }
+      RCLCPP_INFO(this->get_logger(), "LIFTER BEHIND ALREADY HOMING");
 
-    //   // if(!start_saved)
-    //   if (this->now().seconds() - stop_time > 2.0)
-    //   {
-    //     start_x_after_climb = currentX;
-    //     start_y_after_climb = currentY;
+      if (is_behind_lifter_done)
+      {
+        is_behind_lifter_done = false;
 
-    //     start_saved = true;
+        std_msgs::msg::Bool down_msg;
+        down_msg.data = true;
+        lifter_front_down_pub->publish(down_msg);
 
-    //     current_state = POST_CLIMB_MOVE;
-    //   }
+        RCLCPP_INFO(this->get_logger(), "Lifter Belakang DONE! Turunkan depan sedikit, lanjut...");
 
-    //   break;
-    // }
+        current_state = AFTER_CLIMB; // atau state lanjutan yang sesuai rencana kamu
+      }
+      break;
+    }
 
-    // case POST_CLIMB_MOVE:
-    // {
+    case AFTER_CLIMB:
+    {
+      cmd.linear.x = 0.2;
+      cmd.linear.y = 0.0;
+      // cmd.angular.z = 0.0;
+      cmd.angular.z = -controlled_angle;
 
-    //   double dx = currentX - start_x_after_climb;
-    //   double dy = currentY - start_y_after_climb;
-    //   double dist = sqrt(dx * dx + dy * dy);
+      RCLCPP_INFO(this->get_logger(), "robot maju setelah lifter depan turun dikit (Proxy Belakang)...");
 
-    //   if (dist < 0.2)
-    //   {
-    //     cmd.linear.x = 0.3;
-    //     cmd.linear.y = 0.0;
-    //     cmd.angular.z = 0.0;
-    //   }
-    //   else
-    //   {
-    //     cmd.linear.x = 0.0;
-    //     cmd.linear.y = 0.0;
-    //     cmd.angular.z = -controlled_angle;
+      if (!proxy1_left)
+      {
+        cmd.linear.x = 0.0;
+        cmd.angular.z = 0.0;
 
-    //     double entry_raw_x = currentX - odom_offset_x;
-    //     double entry_raw_y = currentY - odom_offset_y;
+        std_msgs::msg::Bool behind_down_msg;
+        behind_down_msg.data = true;
+        lifter_behind_down_pub->publish(behind_down_msg);
 
-    //     odom_offset_x = 2.952 - entry_raw_x;
-    //     odom_offset_y = -1.438 - entry_raw_y;
+        RCLCPP_WARN(this->get_logger(), "Proxy Belakang Lock! Turunkan Lifter Belakang untuk jalan maju...");
+        current_state = STOP_SENSOR;
+      }
 
-    //     RCLCPP_INFO(this->get_logger(),
-    //         "ENTRY STAGE2: currentX=%.3f currentY=%.3f heading=%.3f",
-    //         currentX, currentY, heading);
+      break;
+    }
 
+      // case STOP_SENSOR:
+      // {
+      //   cmd.linear.x = 0.0;
+      //   cmd.linear.y = 0.0;
+      //   cmd.angular.z = 0.0;
+      //   // cmd.angular.z = -controlled_angle;
 
-    //     std_msgs::msg::Bool reachedClimb_msg;
-    //     reachedClimb_msg.data = true;
-    //     climb_done_pub->publish(reachedClimb_msg);
+      //   RCLCPP_INFO(this->get_logger(), "STOP 1 sensor WAITING LIFTER");
 
-    //     RCLCPP_INFO(this->get_logger(), "masuk stage 2");
+      //   if (!stop_initialize)
+      //   {
+      //     stop_time = this->now().seconds();
+      //     stop_initialize = true;
+      //   }
 
+      //   // if(!start_saved)
+      //   if (this->now().seconds() - stop_time > 2.0)
+      //   {
+      //     start_x_after_climb = currentX;
+      //     start_y_after_climb = currentY;
 
-    //     current_state = STAGE2_MOVE_STEPbSTEP;
+      //     start_saved = true;
 
-    //     is_stage2 = true;
-    //     start_saved = false;
-    //     stage2_initiallized = false;
-    //     stop_initialize = false;
-    //     st2_state = ST2_IDLE;
+      //     // current_state = POST_CLIMB_MOVE;
+      //   }
 
-    //     if (!latest_next_step.empty())
-    //     {
-    //       // update_target_from_step(latest_next_step);
-    //       int row_ins = parse_int_from_json(latest_next_step, "row");
-    //       int col_ins = parse_int_from_json(latest_next_step, "col");
-    //       int height_ins = parse_int_from_json(latest_next_step, "height");
-    //       std::string dir_ins = parse_direction_from_json(latest_next_step);
+      //   break;
+      // }
 
-    //       if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
-    //       {
-    //         update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
-    //       }
-    //       goal_active = true;
-    //       has_wp = true;
-    //       wp_processing = false;
-    //     }
+    case POST_CLIMB_MOVE:
+    {
 
-    //     RCLCPP_INFO(this->get_logger(), "ROBOT SUDAH DI TENGAH GRID");
-    //   }
+      double dx = currentX - start_x_after_climb;
+      double dy = currentY - start_y_after_climb;
+      double dist = sqrt(dx * dx + dy * dy);
 
-    //   break;
-    // }
+      if (dist < 0.2)
+      {
+        cmd.linear.x = 0.3;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = 0.0;
+      }
+      else
+      {
+        cmd.linear.x = 0.0;
+        cmd.linear.y = 0.0;
+        cmd.angular.z = -controlled_angle;
+
+        double entry_raw_x = currentX - odom_offset_x;
+        double entry_raw_y = currentY - odom_offset_y;
+
+        odom_offset_x = 2.952 - entry_raw_x;
+        odom_offset_y = -1.438 - entry_raw_y;
+
+        RCLCPP_INFO(this->get_logger(),
+                    "ENTRY STAGE2: currentX=%.3f currentY=%.3f heading=%.3f",
+                    currentX, currentY, heading);
+
+        std_msgs::msg::Bool reachedClimb_msg;
+        reachedClimb_msg.data = true;
+        climb_done_pub->publish(reachedClimb_msg);
+
+        RCLCPP_INFO(this->get_logger(), "masuk stage 2");
+
+        current_state = STAGE2_MOVE_STEPbSTEP;
+
+        is_stage2 = true;
+        start_saved = false;
+        stage2_initiallized = false;
+        stop_initialize = false;
+        st2_state = ST2_IDLE;
+
+        if (!latest_next_step.empty())
+        {
+          // update_target_from_step(latest_next_step);
+          int row_ins = parse_int_from_json(latest_next_step, "row");
+          int col_ins = parse_int_from_json(latest_next_step, "col");
+          int height_ins = parse_int_from_json(latest_next_step, "height");
+          std::string dir_ins = parse_direction_from_json(latest_next_step);
+
+          if (row_ins >= 0 && col_ins >= 0 && !dir_ins.empty())
+          {
+            update_target_from_step(row_ins, col_ins, height_ins, dir_ins);
+          }
+          goal_active = true;
+          has_wp = true;
+          wp_processing = false;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "ROBOT SUDAH DI TENGAH GRID");
+      }
+
+      break;
+    }
 
       // ================================================STAGE 2====================================================
 
@@ -1460,7 +1548,6 @@ private:
             grip_delay_timer_init = false;
             st2_state = ST2_GRIP_DELAY;
             RCLCPP_INFO(this->get_logger(), "need_climb → ST2_GRIP_DELAY (solenoid dulu baru lifter naik)");
-
           }
           else
           {
@@ -1612,7 +1699,6 @@ private:
           lifter_up_confirmed = false;
           waiting_for_lifter_up_confirm = false;
 
-  
           if (has_pending_step)
           {
             update_target_from_step(pending_row, pending_col, pending_height, pending_dir);
@@ -1718,8 +1804,7 @@ private:
             sol_off.data = false;
             solenoid_grip_pub->publish(sol_off);
 
-            RCLCPP_ERROR(this->get_logger(),"TIMEOUT -> SOLENOID OFF DIKIRIM");
-
+            RCLCPP_ERROR(this->get_logger(), "TIMEOUT -> SOLENOID OFF DIKIRIM");
 
             wait_lifter_st2_timer_init = false;
             st2_state = ST2_AFTER_CLIMB;
@@ -2106,7 +2191,10 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr descend_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr solenoid_grip_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr allow_lifter_up_pub;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_entry_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_front_entry_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_behind_entry_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_front_down_pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr lifter_behind_down_pub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage3_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr descend_lifter_up_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr entry_point_sub;
@@ -2117,10 +2205,13 @@ private:
   rclcpp::Subscription<std_msgs::msg::UInt32>::SharedPtr ir_code_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr bluePill_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr lifter_front_done_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr lifter_behind_done_sub;
   // di bagian private class Movement
   nav_msgs::msg::Odometry odom_robot_msg;
 
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Time ignore_obstacle_since;
   rclcpp::Time hold_start_time;
 };
 
