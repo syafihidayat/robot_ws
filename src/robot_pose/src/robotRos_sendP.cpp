@@ -40,6 +40,9 @@ public:
     robot_up_sub = this->create_subscription<std_msgs::msg::Bool>("/robot_up_wp0", 10,
                                                                   std::bind(&waypointPublish::robot_up_callback, this, std::placeholders::_1));
 
+    start_sub = this->create_subscription<std_msgs::msg::Bool>("robot_start", 10,
+                                                                std::bind(&waypointPublish::start_callback, this, std::placeholders::_1));
+
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
                                                                   [this](const nav_msgs::msg::Odometry::SharedPtr msg)
                                                                   {
@@ -59,13 +62,19 @@ public:
         {1.1, -1.15},
         {1.5, -1.15}};
 
+        // {0.0, 1.1},
+        // {-1.0, 1.1},
+        // {1.1, -1.15},
+        // {1.5, -1.15}
+      // };
+
     current_waypoint_index = 0;
     waiting_ir = false;
     reached_latched = false;
     all_completed = false;
 
-    RCLCPP_INFO(this->get_logger(), "Waypoint Publisher Start");
-    send_waypoint();
+    RCLCPP_INFO(this->get_logger(), "Waypoint Publisher Ready, menunggu robot_start...");
+    // send_waypoint(); // ← JANGAN langsung jalan di sini, harus nunggu tombol start (topic "robot_start")
   }
 
 private:
@@ -90,7 +99,9 @@ private:
   bool stage2_done = false;
   bool exit_pos_pushed = false;
   bool stage1_done = false;
+  bool lifter_wp0_triggered = false;
   bool retry_mode = false;
+  bool start_triggered = false;
 
   size_t current_waypoint_index;
 
@@ -115,6 +126,17 @@ private:
     pose_pub->publish(point);
 
     reached_latched = false;
+
+    if(current_waypoint_index == 0 && !retry_mode && !lifter_wp0_triggered)
+    {
+      lifter_wp0_triggered = true;
+
+      std_msgs::msg::Bool lifter_msg;
+      lifter_msg.data = true;
+      lifter_pub->publish(lifter_msg);
+
+      RCLCPP_INFO(this->get_logger(), "Robot mulai jalan ke WP0 -> lifter turun paralel");
+    }
 
     RCLCPP_INFO(this->get_logger(), "Sending waypoint %ld (%.2f, %.2f)", current_waypoint_index, point.x, point.y);
   }
@@ -143,6 +165,20 @@ private:
 
           RCLCPP_INFO(this->get_logger(), "robot naik (setelah delay)");
         });
+  }
+
+  // ===================== START CALLBACK (tombol start GUI) =====================
+  void start_callback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (!msg->data)
+      return;
+    if (start_triggered)
+      return; // anti double trigger, jaga2 kalau topic dipublish berkali2
+
+    start_triggered = true;
+
+    RCLCPP_INFO(this->get_logger(), "ROBOT_START DITERIMA -> mulai kirim waypoint pertama");
+    send_waypoint();
   }
 
   // ===================== REACHED CALLBACK =====================
@@ -206,11 +242,11 @@ private:
       // advance_waypoint();
       // return;
 
-      std_msgs::msg::Bool lifter_msg;
-      lifter_msg.data = true;
-      lifter_pub->publish(lifter_msg);
+      // std_msgs::msg::Bool lifter_msg;
+      // lifter_msg.data = true;
+      // lifter_pub->publish(lifter_msg);
 
-      RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
+      // RCLCPP_INFO(this->get_logger(), "Trigger lifter turun");
 
       // RCLCPP_INFO(this->get_logger(), "WP0 reached → lanjut ke WP1, lifter turun dalam 1500ms...");
 
@@ -486,6 +522,7 @@ private:
   rclcpp::TimerBase::SharedPtr ir_timeout_timer;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr buttonStage2_sub;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr robot_up_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr start_sub;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr entry_sub;
   rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr lifter_grid_pub;
 

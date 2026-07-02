@@ -237,7 +237,7 @@ private:
 
   int stage1_target_count = 0;
 
-  const int STAGE1_TARGETS_NORMAL = 3;
+  const int STAGE1_TARGETS_NORMAL = 4;
   const int STAGE2_TARGETS_RETRY = 4;
 
   int stage1_targets_total = STAGE1_TARGETS_NORMAL;
